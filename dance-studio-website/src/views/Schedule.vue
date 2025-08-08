@@ -207,7 +207,7 @@
 </template>
 
 <script>
-import { API_BASE_URL } from '@/config/api';
+import { API_BASE_URL, API_ENDPOINTS } from '@/utils/api.js';
 
 export default {
   name: 'Schedule',
@@ -239,7 +239,7 @@ export default {
   methods: {
     async fetchDanceTypes() {
       try {
-        const response = await fetch(`${API_BASE_URL}/api/styles`);
+        const response = await fetch(API_ENDPOINTS.STYLES);
         const result = await response.json();
         if (response.ok && result.success) {
           this.danceTypes = ['全部', ...result.styles.map(s => s.name)];
@@ -260,7 +260,7 @@ export default {
       const end_date = this.formatDateForAPI(this.weekEndDate);
       
       try {
-        const response = await fetch(`${API_BASE_URL}/api/schedules?start_date=${start_date}&end_date=${end_date}`);
+        const response = await fetch(`${API_ENDPOINTS.SCHEDULES}?start_date=${start_date}&end_date=${end_date}`);
         const result = await response.json();
         if (response.ok && result.success) {
           // 動態生成時間段並轉換後端資料格式
@@ -488,8 +488,8 @@ export default {
         console.log('=== 發送報名資料到後端 ===');
         console.log('報名資料:', enrollmentData);
 
-        // 發送 POST 請求到後端 (使用 Docker 內部網路)
-        const response = await fetch(`${API_BASE_URL}/api/enrollment`, {
+        // 發送 POST 請求到後端 (使用動態 API 配置)
+        const response = await fetch(`${API_BASE_URL}/enrollment`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
