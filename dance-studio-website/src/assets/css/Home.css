@@ -1,0 +1,54 @@
+.home {
+  text-align: left;
+}
+.carousel-item img {
+  height: 600px;
+  object-fit: cover;
+}
+.bg-light {
+  background-color: #f8f9fa !important;
+}
+
+/* Recent Events Card Styling */
+.card {
+  height: 100%; /* Ensure cards take full height of their column */
+}
+
+.card-img-top {
+  height: 200px; /* Set a fixed height for card images */
+  object-fit: cover; /* Ensure images cover the area without distortion */
+}
+
+.card-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 150px; /* Set a minimum height for consistent card body content */
+}
+
+.card-title {
+  /* Optional: If titles are too long, you can truncate them */
+  /* white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis; */
+}
+
+.card-text {
+  flex-grow: 1; /* Allow card text to expand and push button to bottom */
+  overflow: hidden; /* Hide overflowing text */
+  display: -webkit-box; /* Required for multi-line ellipsis */
+  -webkit-line-clamp: 3; /* Limit to 3 lines */
+  -webkit-box-orient: vertical; /* Required for multi-line ellipsis */
+}
+
+/* Ensure columns fill row height */
+.container.my-5 > .row {
+  display: flex;
+  align-items: stretch;
+}
+
+/* Add padding to content to prevent it from being hidden behind fixed navbar */
+.content-wrapper {
+  padding-top: 50px; /* Adjust this value based on your navbar's actual height */
+}
+
+

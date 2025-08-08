@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API 配置測試</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .info { background: #e3f2fd; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .success { background: #e8f5e8; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .error { background: #ffebee; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>舞蹈工作室 API 配置測試</h1>
+    
+    <div class="info">
+        <h3>當前環境信息</h3>
+        <p><strong>主機名：</strong> <span id="hostname"></span></p>
+        <p><strong>協議：</strong> <span id="protocol"></span></p>
+        <p><strong>完整 URL：</strong> <span id="fullUrl"></span></p>
+        <p><strong>API 基礎 URL：</strong> <span id="apiBaseUrl"></span></p>
+    </div>
+
+    <div>
+        <h3>API 測試</h3>
+        <button onclick="testApi('styles')">測試舞蹈風格 API</button>
+        <button onclick="testApi('teachers')">測試老師 API</button>
+        <button onclick="testApi('students')">測試學生 API</button>
+        <button onclick="testApi('rooms')">測試教室 API</button>
+    </div>
+
+    <div id="results"></div>
+
+    <script>
+        // API 配置邏輯（與 utils/api.js 相同）
+        const getApiBaseUrl = () => {
+            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                return 'http://localhost:8001';
+            }
+            
+            const protocol = window.location.protocol;
+            const hostname = window.location.hostname;
+            
+            if (protocol === 'https:') {
+                return `${protocol}//${hostname}/api`;
+            }
+            
+            return `${protocol}//${hostname}:8001`;
+        };
+
+        const API_BASE_URL = getApiBaseUrl();
+
+        // 顯示環境信息
+        document.getElementById('hostname').textContent = window.location.hostname;
+        document.getElementById('protocol').textContent = window.location.protocol;
+        document.getElementById('fullUrl').textContent = window.location.href;
+        document.getElementById('apiBaseUrl').textContent = API_BASE_URL;
+
+        // API 測試函數
+        async function testApi(endpoint) {
+            const resultsDiv = document.getElementById('results');
+            const url = `${API_BASE_URL}/api/${endpoint}`;
+            
+            resultsDiv.innerHTML += `<div class="info">正在測試：${url}</div>`;
+            
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultsDiv.innerHTML += `<div class="success">
+                        <strong>✓ ${endpoint} API 成功</strong><br>
+                        狀態碼：${response.status}<br>
+                        數據：${JSON.stringify(data, null, 2)}
+                    </div>`;
+                } else {
+                    resultsDiv.innerHTML += `<div class="error">
+                        <strong>✗ ${endpoint} API 失敗</strong><br>
+                        狀態碼：${response.status}<br>
+                        錯誤：${JSON.stringify(data, null, 2)}
+                    </div>`;
+                }
+            } catch (error) {
+                resultsDiv.innerHTML += `<div class="error">
+                    <strong>✗ ${endpoint} API 錯誤</strong><br>
+                    錯誤信息：${error.message}<br>
+                    這可能是 CORS 錯誤或網路連接問題
+                </div>`;
+            }
+        }
+
+        // 頁面載入時自動顯示配置信息
+        console.log('API 配置測試頁面已載入');
+        console.log('API_BASE_URL:', API_BASE_URL);
+    </script>
+</body>
+</html>
