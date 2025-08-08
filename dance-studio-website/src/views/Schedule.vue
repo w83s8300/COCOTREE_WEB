@@ -13,16 +13,21 @@
       <h2 class="text-center mb-4">完整課程時間表</h2>
 
       <!-- 週選擇器 -->
-      <div class="d-flex justify-content-center align-items-center mb-4">
-        <label class="form-label me-2 mb-0">選擇日期：</label>
-        <input 
-          type="date" 
-          v-model="selectedWeekStart" 
-          class="form-control w-auto mx-2" 
-          @change="onWeekChange"
-          title="選擇任意日期，系統會顯示該日期所在週的課程表"
-        />
-        <span class="mx-2 align-self-center text-muted">
+      <div class="d-flex flex-wrap align-items-center justify-content-center mb-4">
+        <!-- label + input 包在一起 -->
+        <div class="d-flex align-items-center mb-2 mb-md-0">
+          <label class="form-label me-2 mb-0">選擇日期：</label>
+          <input 
+            type="date" 
+            v-model="selectedWeekStart" 
+            class="form-control w-auto mx-2"
+            @change="onWeekChange"
+            title="選擇任意日期，系統會顯示該日期所在週的課程表"
+          />
+        </div>
+
+        <!-- span 分開一列 -->
+        <span class="mx-2 text-muted text-center">
           週期：{{ formatDateRange(weekStartDate, weekEndDate) }}
         </span>
       </div>
