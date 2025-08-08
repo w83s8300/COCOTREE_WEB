@@ -13,15 +13,17 @@
       <h2 class="text-center mb-4">完整課程時間表</h2>
 
       <!-- 週選擇器 -->
-      <div class="d-flex justify-content-center mb-4">
+      <div class="d-flex justify-content-center align-items-center mb-4">
+        <label class="form-label me-2 mb-0">選擇日期：</label>
         <input 
           type="date" 
           v-model="selectedWeekStart" 
           class="form-control w-auto mx-2" 
           @change="onWeekChange"
+          title="選擇任意日期，系統會顯示該日期所在週的課程表"
         />
-        <span class="mx-2 align-self-center">
-          {{ formatDateRange(weekStartDate, weekEndDate) }}
+        <span class="mx-2 align-self-center text-muted">
+          週期：{{ formatDateRange(weekStartDate, weekEndDate) }}
         </span>
       </div>
 
@@ -310,20 +312,31 @@ export default {
     calculateWeekDates() {
       if (!this.selectedWeekStart) return;
       
-      const startDate = new Date(this.selectedWeekStart);
-      this.weekStartDate = new Date(startDate);
+      const selectedDate = new Date(this.selectedWeekStart);
+      
+      // 計算該日期所在週的週一
+      const currentDay = selectedDate.getDay(); // 0是週日，1是週一，2是週二...
+      const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay; // 計算到週一的偏移
+      const monday = new Date(selectedDate);
+      monday.setDate(selectedDate.getDate() + mondayOffset);
+      
+      // 設定週一為週開始日期
+      this.weekStartDate = new Date(monday);
       
       // 計算週日（週一 + 6天）
-      this.weekEndDate = new Date(startDate);
-      this.weekEndDate.setDate(startDate.getDate() + 6);
+      this.weekEndDate = new Date(monday);
+      this.weekEndDate.setDate(monday.getDate() + 6);
       
-      // 計算該週的七天日期
+      // 計算該週的七天日期（從週一開始）
       this.weekDates = [];
       for (let i = 0; i < 7; i++) {
-        const date = new Date(startDate);
-        date.setDate(startDate.getDate() + i);
+        const date = new Date(monday);
+        date.setDate(monday.getDate() + i);
         this.weekDates.push(date);
       }
+      
+      // 更新日期選擇器顯示週一的日期
+      this.selectedWeekStart = this.formatDateForInput(monday);
     },
     onWeekChange() {
       // 當週日期改變時，先計算週日期，然後自動獲取課程表
