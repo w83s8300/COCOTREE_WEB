@@ -51,6 +51,7 @@
 
 <script>
 import axios from 'axios';
+import { API_ENDPOINTS, buildApiUrl } from '@/utils/api.js';
 
 export default {
   props: {
@@ -86,7 +87,7 @@ export default {
   },
   methods: {
     fetchTeachers() {
-      axios.get('http://localhost:8001/api/teachers')
+      axios.get(API_ENDPOINTS.TEACHERS)
         .then(response => {
           this.teachers = response.data.teachers;
         })
@@ -95,7 +96,7 @@ export default {
         });
     },
     fetchStyles() {
-      axios.get('http://localhost:8001/api/styles')
+      axios.get(API_ENDPOINTS.STYLES)
         .then(response => {
           this.styles = response.data.styles;
         })
@@ -104,7 +105,7 @@ export default {
         });
     },
     fetchCourse(id) {
-      axios.get(`http://localhost:8001/api/courses/${id}`)
+      axios.get(`${API_ENDPOINTS.COURSES}/${id}`)
         .then(response => {
           this.course = response.data.course;
         })
@@ -120,7 +121,7 @@ export default {
       }
     },
     addCourse() {
-      axios.post('http://localhost:8001/api/courses', this.course)
+      axios.post(API_ENDPOINTS.COURSES, this.course)
         .then(() => {
           alert('課程新增成功！');
           this.$emit('course-updated');
@@ -131,7 +132,7 @@ export default {
         });
     },
     updateCourse() {
-      axios.put(`http://localhost:8001/api/courses/${this.course.id}`, this.course)
+      axios.put(`${API_ENDPOINTS.COURSES}/${this.course.id}`, this.course)
         .then(() => {
           alert('課程更新成功！');
           this.$emit('course-updated');

@@ -36,6 +36,7 @@
 
 <script>
 import axios from 'axios';
+import { API_ENDPOINTS, buildApiUrl } from '@/utils/api.js';
 
 export default {
   props: {
@@ -68,7 +69,7 @@ export default {
   },
   methods: {
     fetchStyles() {
-      axios.get('http://localhost:8001/api/styles')
+      axios.get(API_ENDPOINTS.STYLES)
         .then(response => {
           this.styles = response.data.styles;
         })
@@ -77,7 +78,7 @@ export default {
         });
     },
     fetchTeacher(id) {
-      axios.get(`http://localhost:8001/api/teachers/${id}`)
+      axios.get(`${API_ENDPOINTS.TEACHERS}/${id}`)
         .then(response => {
           this.teacher = response.data.teacher;
           this.teacher.style_ids = response.data.teacher.styles.map(s => s.id);
@@ -114,7 +115,7 @@ export default {
       return emailRegex.test(email);
     },
     addTeacher() {
-      axios.post('http://localhost:8001/api/teachers', this.teacher)
+      axios.post(API_ENDPOINTS.TEACHERS, this.teacher)
         .then(() => {
           alert('老師新增成功！');
           this.$emit('teacher-updated');
@@ -141,7 +142,7 @@ export default {
         });
     },
     updateTeacher() {
-      axios.put(`http://localhost:8001/api/teachers/${this.teacher.id}`, this.teacher)
+      axios.put(`${API_ENDPOINTS.TEACHERS}/${this.teacher.id}`, this.teacher)
         .then(() => {
           alert('老師更新成功！');
           this.$emit('teacher-updated');

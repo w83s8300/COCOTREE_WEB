@@ -46,6 +46,7 @@
 
 <script>
 import axios from 'axios';
+import { API_ENDPOINTS, buildApiUrl } from '@/utils/api.js';
 
 export default {
   props: {
@@ -99,7 +100,7 @@ export default {
       };
     },
     fetchStudentData(id) {
-      axios.get(`http://localhost:8001/api/students/${id}`)
+      axios.get(`${API_ENDPOINTS.STUDENTS}/${id}`)
         .then(response => {
           this.student = response.data.student;
           if (this.student.membership_expiry) {
@@ -120,7 +121,7 @@ export default {
       }
     },
     addStudent() {
-      axios.post('http://localhost:8001/api/students', this.student)
+      axios.post(API_ENDPOINTS.STUDENTS, this.student)
         .then(() => {
           alert('學生新增成功！');
           this.$emit('student-updated');
@@ -131,7 +132,7 @@ export default {
         });
     },
     updateStudent() {
-      axios.put(`http://localhost:8001/api/students/${this.studentId}`, this.student)
+      axios.put(`${API_ENDPOINTS.STUDENTS}/${this.studentId}`, this.student)
         .then(() => {
           alert('學生更新成功！');
           this.$emit('student-updated');

@@ -17,6 +17,7 @@
 
 <script>
 import axios from 'axios';
+import { API_ENDPOINTS, buildApiUrl } from '@/utils/api.js';
 
 export default {
   props: {
@@ -42,7 +43,7 @@ export default {
   },
   methods: {
     fetchStyle(id) {
-      axios.get(`http://localhost:8001/api/styles/${id}`)
+      axios.get(`${API_ENDPOINTS.STYLES}/${id}`)
         .then(response => {
           this.style = response.data.style;
         })
@@ -58,7 +59,7 @@ export default {
       }
     },
     addStyle() {
-      axios.post('http://localhost:8001/api/styles', this.style)
+      axios.post(API_ENDPOINTS.STYLES, this.style)
         .then(() => {
           alert('風格新增成功！');
           this.$emit('style-updated');
@@ -69,7 +70,7 @@ export default {
         });
     },
     updateStyle() {
-      axios.put(`http://localhost:8001/api/styles/${this.style.id}`, this.style)
+      axios.put(`${API_ENDPOINTS.STYLES}/${this.style.id}`, this.style)
         .then(() => {
           alert('風格更新成功！');
           this.$emit('style-updated');

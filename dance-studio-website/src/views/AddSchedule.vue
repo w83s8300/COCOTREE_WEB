@@ -82,6 +82,7 @@
 
 <script>
 import axios from 'axios';
+import { API_ENDPOINTS, buildApiUrl } from '@/utils/api.js';
 
 export default {
   props: {

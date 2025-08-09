@@ -55,6 +55,7 @@
 import axios from 'axios';
 import AddCourse from './AddCourse.vue'; // 引入 AddCourse 組件
 import { Modal } from 'bootstrap'; // 引入 Bootstrap Modal JS
+import { API_ENDPOINTS, buildApiUrl } from '@/utils/api.js';
 
 export default {
   components: {
@@ -82,7 +83,7 @@ export default {
   },
   methods: {
     fetchCourses() {
-      axios.get('http://localhost:8001/api/courses')
+      axios.get(API_ENDPOINTS.COURSES)
         .then(response => {
           this.courses = response.data.courses;
         })
@@ -102,7 +103,7 @@ export default {
     },
     deleteCourse(id) {
       if (confirm('確定要刪除這個課程嗎？')) {
-        axios.delete(`http://localhost:8001/api/courses/${id}`)
+        axios.delete(`${API_ENDPOINTS.COURSES}/${id}`)
           .then(() => {
             this.fetchCourses(); // Refresh the list after deletion
           })

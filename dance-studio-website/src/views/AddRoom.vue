@@ -33,6 +33,7 @@
 
 <script>
 import axios from 'axios';
+import { API_ENDPOINTS, buildApiUrl } from '@/utils/api.js';
 
 export default {
   props: {
@@ -62,7 +63,7 @@ export default {
   },
   methods: {
     fetchRoom(id) {
-      axios.get(`http://localhost:8001/api/rooms/${id}`)
+      axios.get(`${API_ENDPOINTS.ROOMS}/${id}`)
         .then(response => {
           this.room = response.data.room;
         })
@@ -78,7 +79,7 @@ export default {
       }
     },
     addRoom() {
-      axios.post('http://localhost:8001/api/rooms', this.room)
+      axios.post(API_ENDPOINTS.ROOMS, this.room)
         .then(() => {
           alert('教室新增成功！');
           this.$emit('room-updated');
@@ -89,7 +90,7 @@ export default {
         });
     },
     updateRoom() {
-      axios.put(`http://localhost:8001/api/rooms/${this.room.id}`, this.room)
+      axios.put(`${API_ENDPOINTS.ROOMS}/${this.room.id}`, this.room)
         .then(() => {
           alert('教室更新成功！');
           this.$emit('room-updated');
