@@ -46,3 +46,22 @@ console.log('API 配置:', {
   protocol: window.location.protocol,
   apiBaseUrl: API_BASE_URL
 });
+
+// API 服務物件
+const apiService = {
+  get: (endpoint) => fetch(buildApiUrl(endpoint)),
+  post: (endpoint, data) => fetch(buildApiUrl(endpoint), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }),
+  put: (endpoint, data) => fetch(buildApiUrl(endpoint), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }),
+  delete: (endpoint) => fetch(buildApiUrl(endpoint), { method: 'DELETE' }),
+  buildUrl: buildApiUrl
+};
+
+export default apiService;

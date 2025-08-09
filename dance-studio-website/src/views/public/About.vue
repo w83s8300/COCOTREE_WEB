@@ -71,4 +71,4 @@ export default {
 }
 </script>
 
-<style src="../assets/css/About.css"></style>
+<style src="../../assets/css/About.css"></style>

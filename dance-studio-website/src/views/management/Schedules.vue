@@ -231,7 +231,7 @@
 
 <script>
 import axios from 'axios';
-import AddSchedule from './AddSchedule.vue';
+import AddSchedule from '../forms/AddSchedule.vue';
 import { Modal } from 'bootstrap';
 import { API_ENDPOINTS, buildApiUrl } from '@/utils/api.js';
 

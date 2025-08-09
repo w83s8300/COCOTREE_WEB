@@ -52,10 +52,9 @@
 </template>
 
 <script>
-import axios from 'axios';
-import AddCourse from './AddCourse.vue'; // 引入 AddCourse 組件
+import apiService from '@/utils/api';
+import AddCourse from '../forms/AddCourse.vue'; // 引入 AddCourse 組件
 import { Modal } from 'bootstrap'; // 引入 Bootstrap Modal JS
-import { API_ENDPOINTS, buildApiUrl } from '@/utils/api.js';
 
 export default {
   components: {
@@ -83,9 +82,10 @@ export default {
   },
   methods: {
     fetchCourses() {
-      axios.get(API_ENDPOINTS.COURSES)
-        .then(response => {
-          this.courses = response.data.courses;
+      apiService.get('courses')
+        .then(response => response.json())
+        .then(data => {
+          this.courses = data.courses;
         })
         .catch(error => {
           console.error('獲取課程列表失敗:', error);
@@ -103,7 +103,8 @@ export default {
     },
     deleteCourse(id) {
       if (confirm('確定要刪除這個課程嗎？')) {
-        axios.delete(`${API_ENDPOINTS.COURSES}/${id}`)
+        apiService.delete(`courses/${id}`)
+          .then(response => response.json())
           .then(() => {
             this.fetchCourses(); // Refresh the list after deletion
           })

@@ -63,4 +63,4 @@ export default {
 }
 </script>
 
-<style src="../assets/css/Contact.css"></style>
+<style src="../../assets/css/Contact.css"></style>

@@ -99,4 +99,4 @@ export default {
 }
 </script>
 
-<style src="../assets/css/Pricing.css"></style>
+<style src="../../assets/css/Pricing.css"></style>

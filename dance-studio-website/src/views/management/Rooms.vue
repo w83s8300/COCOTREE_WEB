@@ -50,10 +50,9 @@
 </template>
 
 <script>
-import axios from 'axios';
-import AddRoom from './AddRoom.vue'; // 引入 AddRoom 組件
+import apiService from '@/utils/api';
+import AddRoom from '../forms/AddRoom.vue'; // 引入 AddRoom 組件
 import { Modal } from 'bootstrap'; // 引入 Bootstrap Modal JS
-import { API_ENDPOINTS, buildApiUrl } from '@/utils/api.js';
 
 export default {
   components: {
@@ -81,9 +80,10 @@ export default {
   },
   methods: {
     fetchRooms() {
-      axios.get(API_ENDPOINTS.ROOMS)
-        .then(response => {
-          this.rooms = response.data.rooms;
+      apiService.get('rooms')
+        .then(response => response.json())
+        .then(data => {
+          this.rooms = data.rooms;
         })
         .catch(error => {
           console.error('獲取教室列表失敗:', error);
@@ -101,7 +101,8 @@ export default {
     },
     deleteRoom(id) {
       if (confirm('確定要刪除這間教室嗎？')) {
-        axios.delete(`${API_ENDPOINTS.ROOMS}/${id}`)
+        apiService.delete(`rooms/${id}`)
+          .then(response => response.json())
           .then(() => {
             this.fetchRooms(); // Refresh the list after deletion
           })

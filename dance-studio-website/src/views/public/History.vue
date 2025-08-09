@@ -79,4 +79,4 @@ export default {
 }
 </script>
 
-<style src="../assets/css/History.css"></style>
+<style src="../../assets/css/History.css"></style>

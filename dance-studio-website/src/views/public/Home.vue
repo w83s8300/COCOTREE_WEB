@@ -79,10 +79,10 @@
 
 <script>
 import { Modal, Carousel } from 'bootstrap';
-import NewsList from '../components/NewsList.vue';
-import FeaturedInstructor from '../components/FeaturedInstructor.vue';
-import RecentEvents from '../components/RecentEvents.vue';
-import VideoGallery from '../components/VideoGallery.vue';
+import NewsList from '../../components/NewsList.vue';
+import FeaturedInstructor from '../../components/FeaturedInstructor.vue';
+import RecentEvents from '../../components/RecentEvents.vue';
+import VideoGallery from '../../components/VideoGallery.vue';
 
 export default {
   name: 'Home',
@@ -162,7 +162,7 @@ export default {
 };
 </script>
 
-<style src="../assets/css/Home.css"></style>
+<style src="../../assets/css/Home.css"></style>
 <style>
 .carousel-inner img {
   pointer-events: none;

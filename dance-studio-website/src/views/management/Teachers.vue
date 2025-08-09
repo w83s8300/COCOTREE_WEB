@@ -56,10 +56,9 @@
 </template>
 
 <script>
-import axios from 'axios';
-import AddTeacher from './AddTeacher.vue'; // 引入 AddTeacher 組件
+import apiService from '@/utils/api';
+import AddTeacher from '../forms/AddTeacher.vue'; // 引入 AddTeacher 組件
 import { Modal } from 'bootstrap'; // 引入 Bootstrap Modal JS
-import { API_ENDPOINTS, buildApiUrl } from '@/utils/api.js';
 
 export default {
   components: {
@@ -88,13 +87,14 @@ export default {
   },
   methods: {
     fetchTeachers() {
-      let url = API_ENDPOINTS.TEACHERS;
+      let endpoint = 'teachers';
       if (this.searchQuery) {
-        url += `?name=${this.searchQuery}`;
+        endpoint += `?name=${this.searchQuery}`;
       }
-      axios.get(url)
-        .then(response => {
-          this.teachers = response.data.teachers;
+      apiService.get(endpoint)
+        .then(response => response.json())
+        .then(data => {
+          this.teachers = data.teachers;
         })
         .catch(error => {
           console.error('獲取老師列表失敗:', error);
@@ -112,7 +112,8 @@ export default {
     },
     deleteTeacher(id) {
       if (confirm('確定要刪除這位老師嗎？')) {
-        axios.delete(`${API_ENDPOINTS.TEACHERS}/${id}`)
+        apiService.delete(`teachers/${id}`)
+          .then(response => response.json())
           .then(() => {
             this.fetchTeachers(); // Refresh the list after deletion
           })

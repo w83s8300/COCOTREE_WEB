@@ -548,4 +548,4 @@ export default {
 };
 </script>
 
-<style src="../assets/css/Schedule.css"></style>
+<style src="../../assets/css/Schedule.css"></style>

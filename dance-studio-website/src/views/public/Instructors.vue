@@ -111,4 +111,4 @@ export default {
 };
 </script>
 
-<style src="../assets/css/Instructors.css"></style>
+<style src="../../assets/css/Instructors.css"></style>

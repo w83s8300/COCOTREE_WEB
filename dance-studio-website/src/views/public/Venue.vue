@@ -151,7 +151,7 @@ export default {
 };
 </script>
 
-<style src="../assets/css/Venue.css"></style>
+<style src="../../assets/css/Venue.css"></style>
 <style>
 .carousel-inner img {
   pointer-events: none;

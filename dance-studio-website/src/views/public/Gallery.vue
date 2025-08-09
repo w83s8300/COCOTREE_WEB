@@ -210,7 +210,7 @@ export default {
 };
 </script>
 
-<style src="../assets/css/Gallery.css"></style>
+<style src="../../assets/css/Gallery.css"></style>
 <style>
 .gallery-card {
   cursor: pointer;

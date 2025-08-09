@@ -42,9 +42,8 @@
 </template>
 
 <script>
-import axios from 'axios';
-import { API_ENDPOINTS, buildApiUrl } from '@/utils/api.js';
-import AddStyle from './AddStyle.vue'; // 引入 AddStyle 組件
+import apiService from '@/utils/api';
+import AddStyle from '../forms/AddStyle.vue'; // 引入 AddStyle 組件
 import { Modal } from 'bootstrap'; // 引入 Bootstrap Modal JS
 
 export default {
@@ -73,9 +72,10 @@ export default {
   },
   methods: {
     fetchStyles() {
-      axios.get(API_ENDPOINTS.STYLES)
-        .then(response => {
-          this.styles = response.data.styles;
+      apiService.get('styles')
+        .then(response => response.json())
+        .then(data => {
+          this.styles = data.styles;
         })
         .catch(error => {
           console.error('獲取風格列表失敗:', error);
@@ -93,7 +93,8 @@ export default {
     },
     deleteStyle(id) {
       if (confirm('確定要刪除這個風格嗎？')) {
-        axios.delete(`${API_ENDPOINTS.STYLES}/${id}`)
+        apiService.delete(`styles/${id}`)
+          .then(response => response.json())
           .then(() => {
             this.fetchStyles(); // Refresh the list after deletion
           })

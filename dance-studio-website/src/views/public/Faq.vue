@@ -74,4 +74,4 @@ export default {
 }
 </script>
 
-<style src="../assets/css/Faq.css"></style>
+<style src="../../assets/css/Faq.css"></style>
