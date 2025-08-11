@@ -22,10 +22,12 @@
         <input type="number" id="hourly_rate" v-model="teacher.hourly_rate">
       </div>
       <div class="form-group">
-        <label>專長風格:</label>
-        <div v-for="style in styles" :key="style.id">
-          <input type="checkbox" :id="'style-' + style.id" :value="style.id" v-model="teacher.style_ids">
-          <label :for="'style-' + style.id">{{ style.name }}</label>
+        <label for="styles">專長風格:</label>
+        <div class="checkbox-group">
+          <div v-for="style in styles" :key="style.id" class="checkbox-item">
+            <input type="checkbox" :id="'style-' + style.id" :value="style.id" v-model="teacher.style_ids" class="checkbox-input">
+            <label :for="'style-' + style.id" class="checkbox-label">{{ style.name }}</label>
+          </div>
         </div>
       </div>
       <button type="submit" class="btn btn-primary">{{ isEditMode ? '更新' : '新增' }}</button>
@@ -190,6 +192,37 @@ input, textarea {
   width: 100%;
   padding: 8px;
   box-sizing: border-box;
+}
+.checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background-color: #f9f9f9;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.checkbox-item {
+  display: flex;
+  align-items: center;
+  min-width: 120px;
+  margin-bottom: 8px;
+}
+.checkbox-input {
+  width: auto !important;
+  margin-right: 8px;
+  transform: scale(1.2);
+}
+.checkbox-label {
+  margin-bottom: 0;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.checkbox-label:hover {
+  color: #007bff;
 }
 button {
   margin-right: 10px;

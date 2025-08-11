@@ -62,11 +62,11 @@
                   <p class="schedule-teacher">{{ schedule.teacher_name }}</p>
                   <p class="schedule-level">{{ schedule.level }}</p>
                   <div class="enrollment-info mb-2">
-                    <small class="text-muted">報名人數：{{ schedule.enrollment_count || 0 }}/{{ schedule.room_capacity || 15 }}人</small>
+                    <small class="text-muted">報名人數：{{ schedule.enrollment_count || 0 }}/{{ schedule.course_capacity || 15 }}人</small>
                   </div>
                   <div class="enrollment-status">
-                    <span v-if="!!schedule.allow_enrollment && (schedule.enrollment_count || 0) < (schedule.room_capacity || 15)" class="badge bg-success">可報名</span>
-                    <span v-else-if="(schedule.enrollment_count || 0) >= (schedule.room_capacity || 15)" class="badge bg-warning">已滿額</span>
+                    <span v-if="!!schedule.allow_enrollment && (schedule.enrollment_count || 0) < (schedule.course_capacity || 15)" class="badge bg-success">可報名</span>
+                    <span v-else-if="(schedule.enrollment_count || 0) >= (schedule.course_capacity || 15)" class="badge bg-warning">已滿額</span>
                     <span v-else class="badge bg-secondary">不開放報名</span>
                   </div>
                   <div class="schedule-actions">
@@ -106,11 +106,11 @@
                 <p class="schedule-teacher">{{ schedule.teacher_name }}</p>
                 <p class="schedule-level">{{ schedule.level }}</p>
                 <div class="enrollment-info mb-2">
-                  <small class="text-muted">報名人數：{{ schedule.enrollment_count || 0 }}/{{ schedule.room_capacity || 15 }}人</small>
+                  <small class="text-muted">報名人數：{{ schedule.enrollment_count || 0 }}/{{ schedule.course_capacity || 15 }}人</small>
                 </div>
                 <div class="enrollment-status mb-2">
-                  <span v-if="!!schedule.allow_enrollment && (schedule.enrollment_count || 0) < (schedule.room_capacity || 15)" class="badge bg-success">可報名</span>
-                  <span v-else-if="(schedule.enrollment_count || 0) >= (schedule.room_capacity || 15)" class="badge bg-warning">已滿額</span>
+                  <span v-if="!!schedule.allow_enrollment && (schedule.enrollment_count || 0) < (schedule.course_capacity || 15)" class="badge bg-success">可報名</span>
+                  <span v-else-if="(schedule.enrollment_count || 0) >= (schedule.course_capacity || 15)" class="badge bg-warning">已滿額</span>
                   <span v-else class="badge bg-secondary">不開放報名</span>
                 </div>
                 <div class="schedule-actions">
@@ -152,11 +152,11 @@
           <div class="modal-header">
             <h5 class="modal-title" id="enrollmentModalLabel">課程報名人員</h5>
             <div class="d-flex gap-2">
-              <button type="button" class="btn btn-sm btn-danger" @click="cancelAllEnrollments" v-if="enrollmentList.length > 0">
+              <!-- <button type="button" class="btn btn-sm btn-danger" @click="cancelAllEnrollments" v-if="enrollmentList.length > 0">
                 取消所有報名
-              </button>
-              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </button> -->
             </div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
             <div v-if="selectedSchedule">
@@ -172,7 +172,7 @@
                   <div class="col-md-6">
                     <p><strong>授課老師：</strong>{{ selectedSchedule.teacher_name || '未指定' }}</p>
                     <p><strong>教室：</strong>{{ selectedSchedule.room_name || '未指定' }}</p>
-                    <p><strong>容量：</strong>{{ enrollmentList.length }}/{{ selectedSchedule.room_capacity || 15 }}人</p>
+                    <p><strong>容量：</strong>{{ enrollmentList.length }}/{{ selectedSchedule.course_capacity || 15 }}人</p>
                   </div>
                 </div>
               </div>

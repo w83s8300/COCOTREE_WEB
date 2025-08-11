@@ -73,7 +73,7 @@
                   <p class="lesson-teacher">{{ lesson.teacher }}</p>
                   <p class="lesson-level">{{ lesson.level }}</p>
                   <div class="enrollment-info">
-                    <small class="text-muted">{{ lesson.enrollment_count }}/{{ lesson.room_capacity }}人</small>
+                    <small class="text-muted">{{ lesson.enrollment_count }}/{{ lesson.course_capacity }}人</small>
                   </div>
                   <div class="enrollment-status">
                     <span v-if="lesson.allow_enrollment && !lesson.is_full" class="badge bg-success">可報名</span>
@@ -106,7 +106,7 @@
                 <p class="lesson-teacher">{{ lesson.teacher }}</p>
                 <p class="lesson-level">{{ lesson.level }}</p>
                 <div class="enrollment-info">
-                  <small class="text-muted">報名人數：{{ lesson.enrollment_count }}/{{ lesson.room_capacity }}人</small>
+                  <small class="text-muted">報名人數：{{ lesson.enrollment_count }}/{{ lesson.course_capacity }}人</small>
                 </div>
                 <div class="enrollment-status">
                   <span v-if="lesson.allow_enrollment && !lesson.is_full" class="badge bg-success">可報名</span>
@@ -147,7 +147,7 @@
                 <strong>舞蹈類型：</strong>{{ selectedLesson.type }}
               </div>
               <div class="info-item">
-                <strong>報名人數：</strong>{{ selectedLesson.enrollment_count }}/{{ selectedLesson.room_capacity }}人
+                <strong>報名人數：</strong>{{ selectedLesson.enrollment_count }}/{{ selectedLesson.course_capacity }}人
               </div>
               <div class="info-item">
                 <strong>報名狀態：</strong>
@@ -285,8 +285,8 @@ export default {
             schedule_id: s.id, // 新增課程時間表 ID
             course_price: s.course_price || 1, // 新增課程扣堂數，預設為1
             enrollment_count: s.enrollment_count || 0, // 新增報名人數
-            room_capacity: s.room_capacity || 15, // 新增教室容量
-            is_full: s.enrollment_count >= s.room_capacity // 新增是否已滿標記
+            course_capacity: s.course_capacity || 15, // 使用課程容量
+            is_full: s.enrollment_count >= s.course_capacity // 使用課程容量判斷是否已滿
           }));
           
         } else {
@@ -531,6 +531,9 @@ export default {
           
           // 報名成功後關閉 Modal
           this.closeModal();
+          
+          // 自動獲取課程表
+          this.fetchSchedule();
         } else {
           console.error('報名失敗:', result);
           // 顯示後端回傳的具體錯誤訊息

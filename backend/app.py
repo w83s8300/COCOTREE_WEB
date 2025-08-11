@@ -257,33 +257,32 @@ class Enrollment(Resource):
                 
                 # 查詢課程的扣堂數和容量檢查
                 course_price = 1  # 預設扣除1堂
-                room_capacity = 15  # 預設容量
+                course_capacity = 15  # 預設容量
                 current_enrollment = 0
                 
                 if schedule_id:
-                    # 查詢課程價格和教室容量
+                    # 查詢課程價格和課程人數上限
                     price_query = """
-                    SELECT c.price, r.capacity,
+                    SELECT c.price, c.max_students as course_capacity,
                            COUNT(e.id) as current_enrollment
                     FROM course_schedules cs 
                     JOIN courses c ON cs.course_id = c.id 
-                    LEFT JOIN rooms r ON cs.room_id = r.id
                     LEFT JOIN enrollments e ON cs.id = e.schedule_id AND e.status = 'confirmed'
                     WHERE cs.id = %s
-                    GROUP BY cs.id, c.price, r.capacity
+                    GROUP BY cs.id, c.price, c.max_students
                     """
                     cursor.execute(price_query, (schedule_id,))
                     price_result = cursor.fetchone()
                     if price_result:
                         if price_result['price']:
                             course_price = int(price_result['price'])
-                        if price_result['capacity']:
-                            room_capacity = price_result['capacity']
+                        if price_result['course_capacity']:
+                            course_capacity = price_result['course_capacity']
                         current_enrollment = price_result['current_enrollment'] or 0
                 
                 # 檢查是否已滿額
-                if current_enrollment >= room_capacity:
-                    return {'error': f'很抱歉，此課程報名人數已滿（{current_enrollment}/{room_capacity}）'}, 400
+                if current_enrollment >= course_capacity:
+                    return {'error': f'很抱歉，此課程報名人數已滿（{current_enrollment}/{course_capacity}）'}, 400
                 
                 # 檢查剩餘堂數
                 remaining_classes = student['remaining_classes'] or 0
@@ -769,13 +768,13 @@ class CourseSchedules(Resource):
 
                 # 基本查詢語句，包含報名人數和動態報名狀態
                 query = """
-                SELECT cs.*, c.name as course_name, c.level, c.price as course_price, 
+                SELECT cs.*, c.name as course_name, c.level, c.price as course_price, c.max_students as course_capacity,
                        s.name as style_name, t.name as teacher_name, r.name as room_name, 
                        r.capacity as room_capacity,
                        COUNT(e.id) as enrollment_count,
                        CASE 
                            WHEN cs.allow_enrollment = 0 THEN 0
-                           WHEN COUNT(e.id) >= r.capacity THEN 0
+                           WHEN COUNT(e.id) >= c.max_students THEN 0
                            ELSE 1
                        END as dynamic_allow_enrollment
                 FROM course_schedules cs
@@ -1997,6 +1996,7 @@ class ScheduleEnrollments(Resource):
                 SELECT 
                     cs.id as schedule_id,
                     c.name as course_name,
+                    c.max_students as course_capacity,
                     cs.schedule_date,
                     cs.start_time,
                     cs.end_time,
@@ -2031,6 +2031,7 @@ class ScheduleEnrollments(Resource):
                         schedule_info = {
                             'schedule_id': row['schedule_id'],
                             'course_name': row['course_name'],
+                            'course_capacity': row['course_capacity'],
                             'schedule_date': str(row['schedule_date']) if row['schedule_date'] else None,
                             'start_time': str(row['start_time']) if row['start_time'] else None,
                             'end_time': str(row['end_time']) if row['end_time'] else None,

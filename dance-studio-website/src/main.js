@@ -11,6 +11,21 @@ import 'aos/dist/aos.css'; // Import AOS CSS
 import VCalendar from 'v-calendar';
 import 'v-calendar/dist/style.css'; // Import v-calendar CSS
 
+// 只在 localhost 環境下啟用 Vue DevTools
+if (process.env.NODE_ENV === 'development') {
+  const hostname = window.location.hostname;
+  if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+    // 禁用 Vue DevTools
+    if (window.__VUE_DEVTOOLS_GLOBAL_HOOK__) {
+      window.__VUE_DEVTOOLS_GLOBAL_HOOK__.enabled = false;
+    }
+    // 設置 Vue 配置以禁用 devtools
+    if (typeof window !== 'undefined') {
+      window.__VUE_PROD_DEVTOOLS__ = false;
+    }
+  }
+}
+
 const app = createApp(App);
 
 app.use(router);
