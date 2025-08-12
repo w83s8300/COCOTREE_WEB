@@ -8,7 +8,7 @@
       </div>
       <div class="form-group">
         <label for="email">電子郵件:</label>
-        <input type="email" id="email" v-model="student.email" required>
+        <input type="email" id="email" v-model="student.email">
       </div>
       <div class="form-group">
         <label for="phone">電話:</label>
@@ -103,7 +103,17 @@ export default {
       axios.get(`${API_ENDPOINTS.STUDENTS}/${id}`)
         .then(response => {
           this.student = response.data.student;
-          if (this.student.membership_expiry) {
+          
+          // 處理日期欄位，如果是 1911-01-01 則顯示為空
+          if (this.student.date_of_birth === '1911-01-01') {
+            this.student.date_of_birth = '';
+          } else if (this.student.date_of_birth) {
+            this.student.date_of_birth = this.student.date_of_birth.split('T')[0];
+          }
+          
+          if (this.student.membership_expiry === '1911-01-01') {
+            this.student.membership_expiry = '';
+          } else if (this.student.membership_expiry) {
             this.student.membership_expiry = this.student.membership_expiry.split('T')[0];
           }
         })
@@ -114,14 +124,23 @@ export default {
         });
     },
     submitForm() {
+      // 處理空的日期欄位
+      const studentData = { ...this.student };
+      if (!studentData.date_of_birth || studentData.date_of_birth === '') {
+        studentData.date_of_birth = '1911-01-01';
+      }
+      if (!studentData.membership_expiry || studentData.membership_expiry === '') {
+        studentData.membership_expiry = '1911-01-01';
+      }
+      
       if (this.isEditing) {
-        this.updateStudent();
+        this.updateStudent(studentData);
       } else {
-        this.addStudent();
+        this.addStudent(studentData);
       }
     },
-    addStudent() {
-      axios.post(API_ENDPOINTS.STUDENTS, this.student)
+    addStudent(studentData) {
+      axios.post(API_ENDPOINTS.STUDENTS, studentData)
         .then(() => {
           alert('學生新增成功！');
           this.$emit('student-updated');
@@ -131,8 +150,8 @@ export default {
           alert('新增學生失敗！');
         });
     },
-    updateStudent() {
-      axios.put(`${API_ENDPOINTS.STUDENTS}/${this.studentId}`, this.student)
+    updateStudent(studentData) {
+      axios.put(`${API_ENDPOINTS.STUDENTS}/${this.studentId}`, studentData)
         .then(() => {
           alert('學生更新成功！');
           this.$emit('student-updated');

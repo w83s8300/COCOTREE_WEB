@@ -129,9 +129,7 @@ export default {
           if (error.response && error.response.data && error.response.data.error) {
             const errorDetail = error.response.data.error;
             
-            if (errorDetail.includes('Duplicate entry') && errorDetail.includes('email')) {
-              errorMessage = '新增老師失敗：此電子郵件已被使用！';
-            } else if (errorDetail.includes('foreign key constraint fails')) {
+            if (errorDetail.includes('foreign key constraint fails')) {
               errorMessage = '新增老師失敗：選擇的專長風格無效！';
             } else if (errorDetail.includes('缺少必要欄位')) {
               errorMessage = '新增老師失敗：請填寫老師姓名！';
@@ -156,9 +154,7 @@ export default {
           if (error.response && error.response.data && error.response.data.error) {
             const errorDetail = error.response.data.error;
             
-            if (errorDetail.includes('Duplicate entry') && errorDetail.includes('email')) {
-              errorMessage = '更新老師失敗：此電子郵件已被使用！';
-            } else if (errorDetail.includes('foreign key constraint fails')) {
+            if (errorDetail.includes('foreign key constraint fails')) {
               errorMessage = '更新老師失敗：選擇的專長風格無效！';
             } else if (errorDetail.includes('缺少必要欄位')) {
               errorMessage = '更新老師失敗：請填寫老師姓名！';

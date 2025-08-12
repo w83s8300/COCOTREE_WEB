@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS students (
     email VARCHAR(100) UNIQUE,
     phone VARCHAR(20),
     age INT,
+    date_of_birth DATE COMMENT '出生年月日',
     emergency_contact VARCHAR(100),
     emergency_phone VARCHAR(20),
     medical_notes TEXT,
@@ -170,3 +171,27 @@ INSERT INTO course_schedules (course_id, schedule_date, day_of_week, start_time,
 (4, '2025-01-15', 'Wednesday', '20:00:00', '21:15:00', 3),
 (5, '2025-01-11', 'Saturday', '10:00:00', '11:15:00', 1),
 (5, '2025-01-18', 'Saturday', '10:00:00', '11:15:00', 1);
+
+-- ========================================
+-- 更新老師表格，移除 email 欄位的 UNIQUE 約束，允許電子郵件重複
+-- ========================================
+
+-- 檢查 email 欄位是否有 UNIQUE 約束
+SET @constraint_exists = 0;
+SELECT COUNT(*) INTO @constraint_exists 
+FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu 
+ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+WHERE tc.TABLE_SCHEMA = 'testdb' 
+  AND tc.TABLE_NAME = 'teachers' 
+  AND tc.CONSTRAINT_TYPE = 'UNIQUE'
+  AND kcu.COLUMN_NAME = 'email';
+
+-- 如果存在 UNIQUE 約束，則移除它
+SET @sql = IF(@constraint_exists > 0, 
+    'ALTER TABLE teachers DROP INDEX email',
+    'SELECT ''Email UNIQUE constraint does not exist'' as message');
+
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

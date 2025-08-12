@@ -105,7 +105,7 @@ export default {
         });
     },
     formatDate(dateString) {
-      if (!dateString) return '未設定';
+      if (!dateString || dateString === '1911-01-01') return '未設定';
       const date = new Date(dateString);
       return date.toLocaleDateString('zh-TW');
     },

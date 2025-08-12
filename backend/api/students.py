@@ -4,7 +4,27 @@
 from flask_restful import Resource, request
 from flask import jsonify
 import mysql.connector
+from datetime import date, datetime
 from .database import get_db_connection
+
+def serialize_dates(obj):
+    """序列化日期對象為字符串"""
+    if isinstance(obj, (date, datetime)):
+        return obj.isoformat()
+    return obj
+
+def process_student_data(student):
+    """處理學生資料，序列化日期字段"""
+    if student:
+        for key, value in student.items():
+            student[key] = serialize_dates(value)
+    return student
+
+def process_students_list(students):
+    """處理學生列表，序列化所有日期字段"""
+    for student in students:
+        process_student_data(student)
+    return students
 
 class Students(Resource):
     def get(self):
@@ -17,6 +37,9 @@ class Students(Resource):
             cursor = connection.cursor(dictionary=True)
             cursor.execute("SELECT * FROM students ORDER BY name")
             students = cursor.fetchall()
+            
+            # 處理日期序列化
+            students = process_students_list(students)
             
             return {'students': students}, 200
             
@@ -43,16 +66,32 @@ class Students(Resource):
             cursor = connection.cursor()
             
             insert_query = """
-                INSERT INTO students (name, email, phone, age, gender, remaining_classes)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO students (name, email, phone, age, date_of_birth, emergency_contact, emergency_phone, 
+                                    medical_notes, remaining_classes, membership_expiry)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
+            
+            # 處理出生年月日，如果沒有提供則設為 1911-01-01
+            date_of_birth = data.get('date_of_birth')
+            if not date_of_birth:
+                date_of_birth = '1911-01-01'
+            
+            # 處理會員到期日，如果沒有提供則設為 1911-01-01
+            membership_expiry = data.get('membership_expiry')
+            if not membership_expiry:
+                membership_expiry = '1911-01-01'
+            
             student_data = (
                 data.get('name'),
                 data.get('email'),
                 data.get('phone'),
                 data.get('age'),
-                data.get('gender'),
-                data.get('remaining_classes', 0)
+                date_of_birth,
+                data.get('emergency_contact'),
+                data.get('emergency_phone'),
+                data.get('medical_notes'),
+                data.get('remaining_classes', 0),
+                membership_expiry
             )
             
             cursor.execute(insert_query, student_data)
@@ -86,6 +125,9 @@ class Student(Resource):
             
             if not student:
                 return {'error': '找不到該學生'}, 404
+            
+            # 處理日期序列化
+            student = process_student_data(student)
                 
             return {'student': student}, 200
             
@@ -120,10 +162,15 @@ class Student(Resource):
             update_fields = []
             update_values = []
             
-            for field in ['name', 'email', 'phone', 'age', 'gender', 'remaining_classes']:
+            for field in ['name', 'email', 'phone', 'age', 'date_of_birth', 'emergency_contact', 'emergency_phone', 'medical_notes', 'remaining_classes', 'membership_expiry']:
                 if field in data:
-                    update_fields.append(f"{field} = %s")
-                    update_values.append(data[field])
+                    # 處理日期欄位的空值
+                    if field in ['date_of_birth', 'membership_expiry'] and (not data[field] or data[field] == ''):
+                        update_fields.append(f"{field} = %s")
+                        update_values.append('1911-01-01')
+                    else:
+                        update_fields.append(f"{field} = %s")
+                        update_values.append(data[field])
             
             if not update_fields:
                 return {'error': '沒有提供有效的更新欄位'}, 400
