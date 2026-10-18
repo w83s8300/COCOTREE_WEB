@@ -4,6 +4,7 @@ import router from './router'
 
 // Bootstrap CSS + selective JS modules (not the entire bundle)
 import 'bootstrap/dist/css/bootstrap.min.css'
+import 'bootstrap-icons/font/bootstrap-icons.css'
 import 'bootstrap/js/dist/modal'
 import 'bootstrap/js/dist/collapse'
 import 'bootstrap/js/dist/carousel'

@@ -11,6 +11,61 @@
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top" aria-label="主導航列">
       <div class="container-fluid">
         <router-link class="navbar-brand" to="/">Dance Studio</router-link>
+
+        <!-- 學員登入 / 狀態選單 (置於右上角，無論手機或電腦皆直接顯示) -->
+        <div class="d-flex align-items-center order-lg-last ms-auto ms-lg-3 me-2 me-lg-0">
+          <!-- 未登入狀態 -->
+          <div v-if="!isLoggedIn" class="d-flex align-items-center gap-2">
+            <button
+              class="btn btn-outline-light btn-sm d-flex align-items-center px-3"
+              @click="openLoginModal"
+            >
+              <i class="bi bi-person-fill me-1"></i>學員登入
+            </button>
+            <button
+              class="btn btn-warning btn-sm d-flex align-items-center px-3 fw-bold text-dark shadow-sm"
+              @click="openRegisterModal"
+            >
+              <i class="bi bi-person-plus-fill me-1"></i>會員註冊
+            </button>
+          </div>
+
+          <!-- 已登入狀態 -->
+          <div v-else class="dropdown position-relative" ref="userDropdownWrapper">
+            <button
+              class="btn btn-primary btn-sm dropdown-toggle d-flex align-items-center px-3 shadow-sm"
+              type="button"
+              @click.stop="toggleUserDropdown"
+            >
+              <i class="bi bi-person-circle me-1"></i>
+              <span class="fw-bold">{{ currentStudent?.name }}</span>
+              <span class="badge bg-light text-primary ms-2 fw-bold">{{ currentStudent?.remaining_classes ?? 0 }} 堂</span>
+            </button>
+            <ul
+              class="dropdown-menu dropdown-menu-end shadow"
+              :class="{ show: userDropdownOpen }"
+              style="position: absolute; right: 0; left: auto; min-width: 220px;"
+            >
+              <li class="px-3 py-2 border-bottom bg-light">
+                <div class="small text-muted">目前登入學員</div>
+                <div class="fw-bold text-dark fs-6">{{ currentStudent?.name }}</div>
+                <div class="small text-primary fw-bold">剩餘：{{ currentStudent?.remaining_classes ?? 0 }} 堂課</div>
+              </li>
+              <li>
+                <a class="dropdown-item py-2" href="javascript:void(0)" @click="openProfileModal">
+                  <i class="bi bi-person-vcard me-2 text-primary"></i>會員中心 / 預約紀錄
+                </a>
+              </li>
+              <li><hr class="dropdown-divider my-1"></li>
+              <li>
+                <a class="dropdown-item py-2 text-danger" href="javascript:void(0)" @click="handleLogout">
+                  <i class="bi bi-box-arrow-right me-2"></i>登出帳號
+                </a>
+              </li>
+            </ul>
+          </div>
+        </div>
+
         <button
           ref="navbarToggler"
           class="navbar-toggler"
@@ -23,8 +78,9 @@
         >
           <span class="navbar-toggler-icon"></span>
         </button>
+
         <div ref="navbarNav" class="collapse navbar-collapse" id="navbarNav">
-          <ul class="navbar-nav">
+          <ul class="navbar-nav me-auto">
             <li v-for="link in navLinks" :key="link.to" class="nav-item">
               <router-link class="nav-link" :to="link.to" @click="closeNavbar">
                 {{ link.label }}
@@ -61,6 +117,8 @@
     <!-- Global UI Components -->
     <ConfirmModal />
     <AppToast />
+    <StudentLoginModal />
+    <StudentProfileModal />
   </div>
 </template>
 
@@ -68,30 +126,48 @@
 import { Collapse } from 'bootstrap'
 import ConfirmModal from './components/ConfirmModal.vue'
 import AppToast from './components/AppToast.vue'
+import StudentLoginModal from './components/StudentLoginModal.vue'
+import StudentProfileModal from './components/StudentProfileModal.vue'
+import { useStudentAuth } from './utils/auth'
+import { showToast } from './utils/toast'
 
 export default {
   name: 'App',
-  components: { ConfirmModal, AppToast },
+  components: {
+    ConfirmModal,
+    AppToast,
+    StudentLoginModal,
+    StudentProfileModal
+  },
   data() {
     return {
       showSplash: true,
+      auth: useStudentAuth(),
+      userDropdownOpen: false,
       navLinks: [
         { to: '/', label: '首頁' },
         { to: '/about', label: '關於我們' },
         { to: '/history', label: '歷史' },
         { to: '/instructors', label: '師資介紹' },
-        { to: '/schedule', label: '課程表' },
+        { to: '/schedule', label: '報名課程' },
         { to: '/pricing', label: '費用' },
         { to: '/gallery', label: '畫廊' },
         { to: '/venue', label: '場地' },
         { to: '/faq', label: '常見問題' },
         { to: '/contact', label: '聯絡我們' },
+        { to: '/admin', label: '管理後台' },
       ]
     }
   },
   computed: {
     currentYear() {
       return new Date().getFullYear()
+    },
+    isLoggedIn() {
+      return !!this.auth.state.student && !!this.auth.state.student.id
+    },
+    currentStudent() {
+      return this.auth.state.student
     }
   },
   methods: {
@@ -101,6 +177,34 @@ export default {
         const collapse = Collapse.getOrCreateInstance(navbarNav)
         collapse.hide()
       }
+      this.userDropdownOpen = false
+    },
+    toggleUserDropdown() {
+      this.userDropdownOpen = !this.userDropdownOpen
+    },
+    openLoginModal() {
+      this.closeNavbar()
+      this.auth.openLoginModal('login')
+    },
+    openRegisterModal() {
+      this.closeNavbar()
+      this.auth.openRegisterModal()
+    },
+    openProfileModal() {
+      this.userDropdownOpen = false
+      this.closeNavbar()
+      this.auth.openProfileModal()
+    },
+    handleLogout() {
+      this.userDropdownOpen = false
+      this.closeNavbar()
+      this.auth.logout()
+      showToast('已成功登出', 'info')
+    },
+    handleClickOutside(e) {
+      if (this.userDropdownOpen && this.$refs.userDropdownWrapper && !this.$refs.userDropdownWrapper.contains(e.target)) {
+        this.userDropdownOpen = false
+      }
     }
   },
   mounted() {
@@ -108,6 +212,16 @@ export default {
     setTimeout(() => {
       this.showSplash = false
     }, 1200)
+
+    document.addEventListener('click', this.handleClickOutside)
+
+    // Automatically refresh student profile if logged in
+    if (this.isLoggedIn) {
+      this.auth.refreshProfile()
+    }
+  },
+  beforeUnmount() {
+    document.removeEventListener('click', this.handleClickOutside)
   }
 }
 </script>

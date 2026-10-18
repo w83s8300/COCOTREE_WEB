@@ -29,7 +29,7 @@
         <!-- Instructor Card -->
         <div v-else class="col-12 col-sm-6 col-md-4 mb-4" v-for="teacher in teachers" :key="teacher.id" data-aos="fade-up">
           <div class="card instructor-card h-100 shadow-sm">
-            <img src="https://picsum.photos/600/400?random=teacher" class="card-img-top teacher-img" :alt="teacher.name" loading="lazy">
+            <img :src="teacher.avatar_url || ('https://picsum.photos/600/400?random=' + teacher.id)" class="card-img-top teacher-img" :alt="teacher.name" loading="lazy">
             <div class="card-body d-flex flex-column">
               <h5 class="card-title fw-bold">{{ teacher.name }}</h5>
               <p class="card-text text-muted mb-3 flex-grow-1">
@@ -63,7 +63,7 @@
             <div class="container-fluid">
               <div class="row align-items-center">
                 <div class="col-12 col-md-5 mb-3 mb-md-0">
-                  <img src="https://picsum.photos/600/600?random=instructor" class="img-fluid rounded shadow-sm" :alt="selectedInstructor.name">
+                  <img :src="selectedInstructor.avatar_url || ('https://picsum.photos/600/600?random=' + (selectedInstructor.id || 1))" class="img-fluid rounded shadow-sm w-100" style="max-height: 380px; object-fit: cover;" :alt="selectedInstructor.name">
                 </div>
                 <div class="col-12 col-md-7 text-start">
                   <h4 class="fw-bold mb-2">{{ selectedInstructor.name }}</h4>

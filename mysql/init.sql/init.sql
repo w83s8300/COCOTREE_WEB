@@ -1,9 +1,22 @@
+SET NAMES utf8mb4;
+SET CHARACTER SET utf8mb4;
+
+DROP TABLE IF EXISTS enrollments;
+DROP TABLE IF EXISTS course_schedules;
+DROP TABLE IF EXISTS courses;
+DROP TABLE IF EXISTS teacher_styles;
+DROP TABLE IF EXISTS styles;
+DROP TABLE IF EXISTS teachers;
+DROP TABLE IF EXISTS rooms;
+DROP TABLE IF EXISTS students;
+
 -- 建立學生表格
-CREATE TABLE IF NOT EXISTS students (
+CREATE TABLE students (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     email VARCHAR(100) UNIQUE,
     phone VARCHAR(20),
+    password_hash VARCHAR(255) NULL COMMENT '登入密碼雜湊',
     age INT,
     date_of_birth DATE COMMENT '出生年月日',
     emergency_contact VARCHAR(100),
@@ -13,10 +26,10 @@ CREATE TABLE IF NOT EXISTS students (
     membership_expiry DATE COMMENT '會員到期日',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 建立教室表格
-CREATE TABLE IF NOT EXISTS rooms (
+CREATE TABLE rooms (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(50) NOT NULL UNIQUE,
     capacity INT DEFAULT 20,
@@ -26,39 +39,41 @@ CREATE TABLE IF NOT EXISTS rooms (
     is_available BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 建立老師表格
-CREATE TABLE IF NOT EXISTS teachers (
+CREATE TABLE teachers (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
-    email VARCHAR(100) UNIQUE,
+    email VARCHAR(100),
     phone VARCHAR(20),
     experience_years INT,
     bio TEXT,
     hourly_rate DECIMAL(10,2),
+    bank_account VARCHAR(100) COMMENT '銀行帳號',
+    avatar_url TEXT NULL COMMENT '大頭貼圖片URL',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 建立風格表格
-CREATE TABLE IF NOT EXISTS styles (
+CREATE TABLE styles (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(50) NOT NULL UNIQUE,
     description TEXT
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 建立老師-風格關聯表
-CREATE TABLE IF NOT EXISTS teacher_styles (
+CREATE TABLE teacher_styles (
     teacher_id INT NOT NULL,
     style_id INT NOT NULL,
     PRIMARY KEY (teacher_id, style_id),
     FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE CASCADE,
     FOREIGN KEY (style_id) REFERENCES styles(id) ON DELETE CASCADE
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 建立課程表格
-CREATE TABLE IF NOT EXISTS courses (
+CREATE TABLE courses (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     description TEXT,
@@ -68,14 +83,20 @@ CREATE TABLE IF NOT EXISTS courses (
     max_students INT DEFAULT 15,
     price DECIMAL(10,2),
     teacher_id INT,
+    base_salary DECIMAL(10,2) DEFAULT 0.00,
+    low_student_threshold INT DEFAULT 0,
+    low_student_salary DECIMAL(10,2) DEFAULT 0.00,
+    extra_student_threshold INT DEFAULT 0,
+    extra_student_fee DECIMAL(10,2) DEFAULT 0.00,
+    salary_cap DECIMAL(10,2) DEFAULT 0.00,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE SET NULL,
     FOREIGN KEY (style_id) REFERENCES styles(id) ON DELETE SET NULL
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 建立課程時間表格
-CREATE TABLE IF NOT EXISTS course_schedules (
+CREATE TABLE course_schedules (
     id INT AUTO_INCREMENT PRIMARY KEY,
     course_id INT NOT NULL,
     schedule_date DATE NOT NULL, -- 具體日期 (YYYY-MM-DD)
@@ -84,13 +105,14 @@ CREATE TABLE IF NOT EXISTS course_schedules (
     end_time TIME NOT NULL,
     room_id INT,
     is_active BOOLEAN DEFAULT TRUE,
+    allow_enrollment BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
     FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE SET NULL
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 修改現有的報名表格，添加外鍵關聯
-CREATE TABLE IF NOT EXISTS enrollments (
+CREATE TABLE enrollments (
     id INT AUTO_INCREMENT PRIMARY KEY,
     student_id INT,
     course_id INT,
@@ -104,10 +126,11 @@ CREATE TABLE IF NOT EXISTS enrollments (
     lesson_type VARCHAR(50) NOT NULL,
     enrollment_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     status VARCHAR(20) DEFAULT 'confirmed',
+    deducted_classes INT DEFAULT 1,
     FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE SET NULL,
     FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE SET NULL,
     FOREIGN KEY (schedule_id) REFERENCES course_schedules(id) ON DELETE SET NULL
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 插入範例教室資料
 INSERT INTO rooms (name, capacity, equipment, description, hourly_rate, is_available) VALUES
@@ -167,26 +190,78 @@ INSERT INTO course_schedules (course_id, schedule_date, day_of_week, start_time,
 (5, '2025-01-11', 'Saturday', '10:00:00', '11:15:00', 1),
 (5, '2025-01-18', 'Saturday', '10:00:00', '11:15:00', 1);
 
--- ========================================
--- 更新老師表格，移除 email 欄位的 UNIQUE 約束，允許電子郵件重複
--- ========================================
+-- 建立管理後台帳號表格 (管理員、櫃檯、老師權限)
+CREATE TABLE IF NOT EXISTS admin_users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    role ENUM('admin', 'desk', 'teacher') NOT NULL DEFAULT 'desk',
+    phone VARCHAR(20) NULL,
+    hourly_rate DECIMAL(10,2) DEFAULT 0.00,
+    bank_account VARCHAR(100) NULL COMMENT '銀行帳號',
+    teacher_id INT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 檢查 email 欄位是否有 UNIQUE 約束
-SET @constraint_exists = 0;
-SELECT COUNT(*) INTO @constraint_exists 
-FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
-JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu 
-ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
-WHERE tc.TABLE_SCHEMA = 'testdb' 
-  AND tc.TABLE_NAME = 'teachers' 
-  AND tc.CONSTRAINT_TYPE = 'UNIQUE'
-  AND kcu.COLUMN_NAME = 'email';
+-- 插入預設管理員、櫃檯、老師帳號
+INSERT IGNORE INTO admin_users (id, username, password, name, role, phone, teacher_id) VALUES
+(1, 'admin', 'admin123', '系統管理員', 'admin', '0911000111', NULL),
+(2, 'counter', 'desk123', '櫃檯客服', 'desk', '0922000222', NULL),
+(3, 'teacher', 'teacher123', '張美麗老師', 'teacher', '0933000333', 1);
 
--- 如果存在 UNIQUE 約束，則移除它
-SET @sql = IF(@constraint_exists > 0, 
-    'ALTER TABLE teachers DROP INDEX email',
-    'SELECT ''Email UNIQUE constraint does not exist'' as message');
+-- 建立員工上下班打卡記錄表
+CREATE TABLE IF NOT EXISTS staff_attendance (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    clock_in DATETIME NOT NULL,
+    effective_clock_in DATETIME NULL COMMENT '計薪起算時間(30分進位)',
+    clock_out DATETIME NULL,
+    effective_clock_out DATETIME NULL COMMENT '計薪截止時間(30分退位)',
+    work_hours DECIMAL(5,2) DEFAULT 0.00,
+    hourly_rate DECIMAL(10,2) DEFAULT 0.00,
+    total_pay DECIMAL(10,2) DEFAULT 0.00,
+    notes VARCHAR(255) NULL,
+    clock_in_ip VARCHAR(50) NULL COMMENT '上班打卡IP',
+    clock_out_ip VARCHAR(50) NULL COMMENT '下班打卡IP',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES admin_users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-PREPARE stmt FROM @sql;
-EXECUTE stmt;
-DEALLOCATE PREPARE stmt;
+-- 建立授課老師上課下課打卡記錄表
+CREATE TABLE IF NOT EXISTS teacher_attendance (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    teacher_id INT NULL,
+    schedule_id INT NULL,
+    course_id INT NULL,
+    course_name VARCHAR(100) NULL,
+    clock_in DATETIME NOT NULL,
+    clock_out DATETIME NULL,
+    duration_minutes INT DEFAULT 0,
+    student_count INT DEFAULT 0,
+    calculated_salary DECIMAL(10,2) DEFAULT 0.00,
+    notes VARCHAR(255) NULL,
+    clock_in_ip VARCHAR(50) NULL COMMENT '上課打卡IP',
+    clock_out_ip VARCHAR(50) NULL COMMENT '下課打卡IP',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES admin_users(id) ON DELETE CASCADE,
+    FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE SET NULL,
+    FOREIGN KEY (schedule_id) REFERENCES course_schedules(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 建立系統通用設定表 (打卡 IP 白名單等)
+CREATE TABLE IF NOT EXISTS system_settings (
+    setting_key VARCHAR(100) PRIMARY KEY,
+    setting_value TEXT NULL,
+    description VARCHAR(255) NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO system_settings (setting_key, setting_value, description) VALUES
+('attendance_ip_restriction_enabled', '0', '是否啟用打卡 IP 白名單限制 (0=關閉, 1=開啟)'),
+('attendance_allowed_ips', '', '允許打卡的 IP 地址清單 (以逗號或換行分隔)');

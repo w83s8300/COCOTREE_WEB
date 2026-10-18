@@ -43,6 +43,119 @@
           </option>
         </select>
       </div>
+
+      <!-- 師資鐘點 / 拆帳規則 (櫃檯客服不顯示) -->
+      <div v-if="canViewSalary" class="card bg-light border-0 mb-4 p-3 rounded-3">
+        <h6 class="fw-bold mb-3 text-primary d-flex align-items-center">
+          <i class="bi bi-cash-coin me-2"></i>師資鐘點費 / 拆帳規則
+        </h6>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label for="base_salary" class="form-label fw-semibold">授課標準底金 (元):</label>
+            <div class="input-group">
+              <span class="input-group-text">$</span>
+              <input 
+                type="number" 
+                id="base_salary" 
+                class="form-control" 
+                v-model.number="course.base_salary" 
+                min="0" 
+                step="10" 
+                placeholder="0"
+              >
+            </div>
+            <div class="form-text">老師每堂課標準保底薪資</div>
+          </div>
+          <div class="col-md-4">
+            <label for="low_student_threshold" class="form-label fw-semibold">幾人以下 (人):</label>
+            <div class="input-group">
+              <input 
+                type="number" 
+                id="low_student_threshold" 
+                class="form-control" 
+                v-model.number="course.low_student_threshold" 
+                min="0" 
+                step="1" 
+                placeholder="0 為不啟用"
+              >
+              <span class="input-group-text">人(含)以下</span>
+            </div>
+            <div class="form-text">0 表示不限制低額門檻</div>
+          </div>
+          <div class="col-md-4">
+            <label for="low_student_salary" class="form-label fw-semibold">只有多少元 (元):</label>
+            <div class="input-group">
+              <span class="input-group-text">$</span>
+              <input 
+                type="number" 
+                id="low_student_salary" 
+                class="form-control" 
+                v-model.number="course.low_student_salary" 
+                min="0" 
+                step="10" 
+                placeholder="0"
+              >
+            </div>
+            <div class="form-text">符合幾人以下時的固定薪資</div>
+          </div>
+
+          <div class="col-md-4">
+            <label for="extra_student_threshold" class="form-label fw-semibold">超過幾人開始加成 (人):</label>
+            <div class="input-group">
+              <input 
+                type="number" 
+                id="extra_student_threshold" 
+                class="form-control" 
+                v-model.number="course.extra_student_threshold" 
+                min="0" 
+                step="1" 
+                placeholder="0"
+              >
+              <span class="input-group-text">人以後</span>
+            </div>
+            <div class="form-text">學生超過此人數後開始加給</div>
+          </div>
+          <div class="col-md-4">
+            <label for="extra_student_fee" class="form-label fw-semibold">一人加多少 (元/人):</label>
+            <div class="input-group">
+              <span class="input-group-text">+$</span>
+              <input 
+                type="number" 
+                id="extra_student_fee" 
+                class="form-control" 
+                v-model.number="course.extra_student_fee" 
+                min="0" 
+                step="10" 
+                placeholder="0"
+              >
+              <span class="input-group-text">/人</span>
+            </div>
+            <div class="form-text">每超出 1 位學生增加的費用</div>
+          </div>
+          <div class="col-md-4">
+            <label for="salary_cap" class="form-label fw-semibold">費用上限 (元，0為無上限):</label>
+            <div class="input-group">
+              <span class="input-group-text">$</span>
+              <input 
+                type="number" 
+                id="salary_cap" 
+                class="form-control" 
+                v-model.number="course.salary_cap" 
+                min="0" 
+                step="50" 
+                placeholder="0 表示無上限"
+              >
+            </div>
+            <div class="form-text">上限設為 0 代表無金額上限</div>
+          </div>
+        </div>
+
+        <div class="alert alert-info py-2 px-3 mt-3 mb-0 small border-0 bg-white shadow-sm">
+          <i class="bi bi-info-circle-fill me-1 text-primary"></i>
+          <strong>規則試算預覽：</strong> {{ salaryRuleSummary }}
+        </div>
+      </div>
+
       <button type="submit" class="btn btn-primary" :disabled="submitting">
         <span v-if="submitting" class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
         {{ isEditMode ? '更新' : '新增' }}
@@ -55,6 +168,7 @@
 <script>
 import api, { API_ENDPOINTS } from '@/utils/api';
 import { showToast } from '@/utils/toast';
+import { useAdminAuth } from '@/utils/adminAuth';
 
 export default {
   props: {
@@ -66,6 +180,7 @@ export default {
   emits: ['course-updated', 'close-modal'],
   data() {
     return {
+      adminAuth: useAdminAuth(),
       course: {
         name: '',
         description: '',
@@ -74,13 +189,53 @@ export default {
         duration_minutes: 60,
         max_students: 15,
         price: null,
-        teacher_id: null
+        teacher_id: null,
+        base_salary: 0,
+        low_student_threshold: 0,
+        low_student_salary: 0,
+        extra_student_threshold: 0,
+        extra_student_fee: 0,
+        salary_cap: 0
       },
       teachers: [],
       styles: [],
       isEditMode: false,
       submitting: false
     };
+  },
+  computed: {
+    canViewSalary() {
+      return this.adminAuth.canViewSalary;
+    },
+    salaryRuleSummary() {
+      const base = Number(this.course.base_salary) || 0;
+      const lowThresh = Number(this.course.low_student_threshold) || 0;
+      const lowSalary = Number(this.course.low_student_salary) || 0;
+      const threshold = Number(this.course.extra_student_threshold) || 0;
+      const extraFee = Number(this.course.extra_student_fee) || 0;
+      const cap = Number(this.course.salary_cap) || 0;
+
+      let text = '';
+      if (lowThresh > 0) {
+        text += `1 ~ ${lowThresh} 人只有 NT$ ${lowSalary}；超過 ${lowThresh} 人底金 NT$ ${base}`;
+      } else {
+        text += `底金 NT$ ${base}`;
+      }
+      text += `（無人報名則為 $0）`;
+
+      if (extraFee > 0) {
+        text += `，超過 ${threshold} 人後每多 1 人加 NT$ ${extraFee}`;
+      } else {
+        text += `，無學生人數額外加成`;
+      }
+
+      if (cap > 0) {
+        text += `，最高上限 NT$ ${cap}`;
+      } else {
+        text += `，無費用上限 (上限0)`;
+      }
+      return text;
+    }
   },
   watch: {
     courseId: {
@@ -110,7 +265,13 @@ export default {
         duration_minutes: 60,
         max_students: 15,
         price: null,
-        teacher_id: null
+        teacher_id: null,
+        base_salary: 0,
+        low_student_threshold: 0,
+        low_student_salary: 0,
+        extra_student_threshold: 0,
+        extra_student_fee: 0,
+        salary_cap: 0
       };
     },
     fetchTeachers() {
@@ -134,7 +295,15 @@ export default {
     fetchCourse(id) {
       api.get(`${API_ENDPOINTS.COURSES}/${id}`)
         .then(data => {
-          this.course = data.course;
+          this.course = {
+            ...data.course,
+            base_salary: data.course.base_salary ?? 0,
+            low_student_threshold: data.course.low_student_threshold ?? 0,
+            low_student_salary: data.course.low_student_salary ?? 0,
+            extra_student_threshold: data.course.extra_student_threshold ?? 0,
+            extra_student_fee: data.course.extra_student_fee ?? 0,
+            salary_cap: data.course.salary_cap ?? 0
+          };
         })
         .catch(error => {
           console.error('獲取課程資料失敗:', error);

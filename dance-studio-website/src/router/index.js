@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useAdminAuth } from '@/utils/adminAuth'
 
 const routes = [
   {
@@ -59,14 +60,27 @@ const routes = [
     path: '/schedule',
     name: 'Schedule',
     component: () => import('../views/student/Schedule.vue'),
-    meta: { title: '課程表 - Dance Studio' }
+    meta: { title: '報名課程 - Dance Studio' }
+  },
+  {
+    path: '/admin/login',
+    name: 'AdminLogin',
+    component: () => import('../views/management/AdminLogin.vue'),
+    meta: { title: '後台登入 - Dance Studio' }
   },
   {
     path: '/admin',
     component: () => import('../views/management/Admin.vue'),
-    redirect: '/admin/students',
     meta: { title: '管理後台 - Dance Studio' },
     children: [
+      {
+        path: '',
+        name: 'AdminRoot',
+        redirect: () => {
+          const adminAuth = useAdminAuth();
+          return adminAuth.isLoggedIn ? adminAuth.getFirstAllowedRoute() : '/admin/login';
+        }
+      },
       {
         path: 'students',
         name: 'Students',
@@ -102,6 +116,24 @@ const routes = [
         name: 'Styles',
         component: () => import('../views/management/Styles.vue'),
         meta: { title: '風格管理 - Dance Studio' }
+      },
+      {
+        path: 'attendance',
+        name: 'Attendance',
+        component: () => import('../views/management/Attendance.vue'),
+        meta: { title: '上下班打卡 - Dance Studio' }
+      },
+      {
+        path: 'teacher-attendance',
+        name: 'TeacherAttendance',
+        component: () => import('../views/management/TeacherAttendance.vue'),
+        meta: { title: '上課下課打卡 - Dance Studio' }
+      },
+      {
+        path: 'users',
+        name: 'Users',
+        component: () => import('../views/management/Users.vue'),
+        meta: { title: '權限帳號管理 - Dance Studio' }
       }
     ]
   },
@@ -121,6 +153,41 @@ const router = createRouter({
     return savedPosition || { top: 0 }
   }
 })
+
+// 後台管理權限與登入守衛 (Navigation Guard)
+router.beforeEach((to, from, next) => {
+  if (to.path.startsWith('/admin')) {
+    const adminAuth = useAdminAuth();
+
+    // 1. 若訪問登入頁
+    if (to.path === '/admin/login') {
+      if (adminAuth.isLoggedIn) {
+        // 已登入則自動轉導至其權限可訪問之首頁
+        return next(adminAuth.getFirstAllowedRoute());
+      }
+      return next();
+    }
+
+    // 2. 訪問其他後台頁面，未登入一律轉至登入頁
+    if (!adminAuth.isLoggedIn) {
+      return next('/admin/login');
+    }
+
+    // 3. 已登入但訪問 /admin 根路徑
+    if (to.path === '/admin' || to.path === '/admin/') {
+      return next(adminAuth.getFirstAllowedRoute());
+    }
+
+    // 4. 檢查該身分是否有訪問此子路由之權限
+    if (!adminAuth.canAccess(to.path)) {
+      return next(adminAuth.getFirstAllowedRoute());
+    }
+
+    return next();
+  }
+
+  next();
+});
 
 // Dynamic document title
 router.afterEach((to) => {

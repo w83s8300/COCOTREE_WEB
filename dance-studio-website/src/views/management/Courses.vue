@@ -38,6 +38,7 @@
             <th scope="col">人數上限</th>
             <th scope="col">扣堂數</th>
             <th scope="col">授課老師</th>
+            <th v-if="canViewSalary" scope="col">師資薪資 / 拆帳規則</th>
             <th scope="col" class="text-center" style="width: 150px;">操作</th>
           </tr>
         </thead>
@@ -50,6 +51,27 @@
             <td>{{ course.max_students }} 人</td>
             <td>{{ course.price ? `${course.price} 堂` : '-' }}</td>
             <td>{{ course.teacher_name || '未指定' }}</td>
+            <td v-if="canViewSalary">
+              <div v-if="course.base_salary || course.low_student_threshold || course.extra_student_fee || course.salary_cap" class="small">
+                <div v-if="course.low_student_threshold > 0" class="mb-1 text-secondary">
+                  <span class="badge bg-warning-subtle text-dark border me-1">門檻</span>
+                  {{ course.low_student_threshold }} 人以下: <strong>${{ course.low_student_salary || 0 }}</strong>
+                </div>
+                <div><span class="text-muted">底金:</span> <strong class="text-primary">${{ course.base_salary || 0 }}</strong></div>
+                <div v-if="course.extra_student_fee > 0" class="text-muted">
+                  超過 {{ course.extra_student_threshold || 0 }} 人: +${{ course.extra_student_fee }}/人
+                </div>
+                <div class="mt-1">
+                  <span v-if="!course.salary_cap || Number(course.salary_cap) === 0" class="badge bg-success-subtle text-success border border-success-subtle">
+                    無上限
+                  </span>
+                  <span v-else class="badge bg-secondary-subtle text-dark border">
+                    上限 ${{ course.salary_cap }}
+                  </span>
+                </div>
+              </div>
+              <span v-else class="text-muted small">未設定</span>
+            </td>
             <td class="text-center">
               <button @click="openEdit(course.id)" class="btn btn-primary btn-sm me-1">編輯</button>
               <button @click="deleteCourse(course.id)" class="btn btn-danger btn-sm">刪除</button>
@@ -87,6 +109,7 @@ import AddCourse from '../forms/AddCourse.vue';
 import { useCrudModal } from '@/composables/useCrudModal';
 import { showToast } from '@/utils/toast';
 import { showConfirm } from '@/utils/dialog';
+import { useAdminAuth } from '@/utils/adminAuth';
 
 export default {
   name: 'Courses',
@@ -99,10 +122,16 @@ export default {
   },
   data() {
     return {
+      adminAuth: useAdminAuth(),
       courses: [],
       loading: false,
       error: null
     };
+  },
+  computed: {
+    canViewSalary() {
+      return this.adminAuth.canViewSalary;
+    }
   },
   mounted() {
     this.initModal();

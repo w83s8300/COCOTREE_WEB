@@ -1,6 +1,58 @@
 <template>
   <div class="add-teacher">
     <form @submit.prevent="submitForm">
+      <!-- 大頭貼照片 -->
+      <div class="form-group mb-4 text-center">
+        <label class="form-label fw-semibold d-block">老師大頭貼照片:</label>
+        <div class="d-flex flex-column align-items-center">
+          <div 
+            class="avatar-picker-preview position-relative rounded-circle shadow-sm border mb-2 overflow-hidden bg-light"
+            style="width: 100px; height: 100px; cursor: pointer;"
+            @click="$refs.teacherFileInput.click()"
+            title="點擊選擇圖片"
+          >
+            <img 
+              v-if="teacher.avatar_url" 
+              :src="teacher.avatar_url" 
+              alt="老師大頭貼" 
+              class="w-100 h-100 object-fit-cover"
+            />
+            <div v-else class="w-100 h-100 d-flex flex-column align-items-center justify-content-center text-secondary">
+              <i class="bi bi-camera fs-2 text-muted"></i>
+              <span class="small text-muted" style="font-size: 11px;">上傳照片</span>
+            </div>
+          </div>
+          <input 
+            type="file" 
+            ref="teacherFileInput" 
+            class="d-none" 
+            accept="image/png, image/jpeg, image/jpg, image/webp, image/gif" 
+            @change="handleAvatarFileSelected" 
+          />
+          <div class="d-flex gap-2">
+            <button 
+              type="button" 
+              class="btn btn-outline-primary btn-sm" 
+              @click="$refs.teacherFileInput.click()" 
+              :disabled="uploadingAvatar"
+            >
+              <span v-if="uploadingAvatar" class="spinner-border spinner-border-sm me-1"></span>
+              <i v-else class="bi bi-upload me-1"></i>{{ teacher.avatar_url ? '更換照片' : '選擇照片' }}
+            </button>
+            <button 
+              type="button" 
+              v-if="teacher.avatar_url" 
+              class="btn btn-outline-danger btn-sm" 
+              @click="teacher.avatar_url = ''"
+              :disabled="uploadingAvatar"
+            >
+              <i class="bi bi-trash3 me-1"></i>移除
+            </button>
+          </div>
+          <div class="form-text small mt-1">支援 JPG, PNG, WEBP 圖片格式</div>
+        </div>
+      </div>
+
       <div class="form-group">
         <label for="name" class="form-label">姓名:</label>
         <input type="text" id="name" class="form-control" v-model="teacher.name" required>
@@ -13,16 +65,52 @@
         <label for="phone" class="form-label">電話:</label>
         <input type="tel" id="phone" class="form-control" v-model="teacher.phone">
       </div>
-      <div class="form-group">
-        <label for="bio" class="form-label">簡介:</label>
+      <div class="form-group mb-3">
+        <label for="bank_account" class="form-label fw-semibold">銀行帳號 (匯款資訊):</label>
+        <input 
+          type="text" 
+          id="bank_account" 
+          class="form-control" 
+          v-model="teacher.bank_account" 
+          placeholder="例如: (822 中國信託) 123-540-123456"
+        >
+        <div class="form-text">用於師資授課鐘點費匯款之金融機構代號與帳號</div>
+      </div>
+      <div class="card bg-light border-0 p-3 mb-3 rounded-3">
+        <h6 class="fw-bold mb-2 text-dark d-flex align-items-center">
+          <i class="bi bi-shield-lock-fill me-2 text-primary"></i>後台登入權限設定
+        </h6>
+        <div class="row g-2">
+          <div class="col-md-6">
+            <label for="account_username" class="form-label small fw-semibold">登入帳號:</label>
+            <input 
+              type="text" 
+              id="account_username" 
+              class="form-control" 
+              v-model="teacher.account_username" 
+              placeholder="例如: teacher_mei"
+            >
+          </div>
+          <div class="col-md-6">
+            <label for="teacher_password" class="form-label small fw-semibold">
+              {{ isEditMode ? '修改密碼 (不修改請留空):' : '登入密碼:' }}
+            </label>
+            <input 
+              type="password" 
+              id="teacher_password" 
+              class="form-control" 
+              v-model="teacher.password" 
+              placeholder="請設定登入密碼"
+            >
+          </div>
+        </div>
+      </div>
+      <div class="form-group mb-3">
+        <label for="bio" class="form-label fw-semibold">簡介:</label>
         <textarea id="bio" class="form-control" v-model="teacher.bio"></textarea>
       </div>
-      <div class="form-group">
-        <label for="hourly_rate" class="form-label">時薪:</label>
-        <input type="number" id="hourly_rate" class="form-control" v-model="teacher.hourly_rate">
-      </div>
-      <div class="form-group">
-        <label for="styles" class="form-label">專長風格:</label>
+      <div class="form-group mb-3">
+        <label for="styles" class="form-label fw-semibold">專長風格:</label>
         <div class="checkbox-group">
           <div v-for="style in styles" :key="style.id" class="checkbox-item">
             <input type="checkbox" :id="'style-' + style.id" :value="style.id" v-model="teacher.style_ids" class="checkbox-input">
@@ -60,11 +148,16 @@ export default {
         experience_years: null,
         bio: '',
         hourly_rate: null,
+        bank_account: '',
+        avatar_url: '',
+        account_username: '',
+        password: '',
         style_ids: []
       },
       styles: [],
       isEditMode: false,
-      submitting: false
+      submitting: false,
+      uploadingAvatar: false
     };
   },
   watch: {
@@ -93,6 +186,10 @@ export default {
         experience_years: null,
         bio: '',
         hourly_rate: null,
+        bank_account: '',
+        avatar_url: '',
+        account_username: '',
+        password: '',
         style_ids: []
       };
     },
@@ -108,8 +205,14 @@ export default {
     fetchTeacher(id) {
       api.get(`${API_ENDPOINTS.TEACHERS}/${id}`)
         .then(data => {
-          this.teacher = data.teacher;
-          this.teacher.style_ids = data.teacher.styles.map(s => s.id);
+          this.teacher = {
+            ...data.teacher,
+            bank_account: data.teacher.bank_account || '',
+            avatar_url: data.teacher.avatar_url || '',
+            account_username: data.teacher.account_username || '',
+            password: '',
+            style_ids: (data.teacher.styles || []).map(s => s.id)
+          };
         })
         .catch(error => {
           console.error('獲取老師資料失敗:', error);
@@ -124,11 +227,6 @@ export default {
       
       if (this.teacher.email && !this.isValidEmail(this.teacher.email)) {
         showToast('請輸入有效的電子郵件地址！', 'error');
-        return;
-      }
-      
-      if (this.teacher.hourly_rate && this.teacher.hourly_rate < 0) {
-        showToast('時薪不能為負數！', 'error');
         return;
       }
       
@@ -198,6 +296,35 @@ export default {
     },
     closeModal() {
       this.$emit('close-modal');
+    },
+    async handleAvatarFileSelected(e) {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      if (!file.type.startsWith('image/')) {
+        showToast('請選取有效的圖片檔案 (JPG, PNG, WEBP, GIF)！', 'error');
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        showToast('圖片大小不得超過 10MB！', 'error');
+        return;
+      }
+      this.uploadingAvatar = true;
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await api.post('/upload/avatar', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        if (res.avatar_url) {
+          this.teacher.avatar_url = res.avatar_url;
+          showToast('大頭貼上傳成功！', 'success');
+        }
+      } catch (err) {
+        showToast(err.message || '圖片上傳失敗，請重試', 'error');
+      } finally {
+        this.uploadingAvatar = false;
+        if (e.target) e.target.value = '';
+      }
     }
   }
 };
