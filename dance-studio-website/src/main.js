@@ -1,55 +1,39 @@
-import { createApp } from 'vue';
-import App from './App.vue';
-import router from './router';
-import 'bootstrap/dist/css/bootstrap.min.css';
-import 'bootstrap';
-import './assets/css/app.css';
+import { createApp } from 'vue'
+import App from './App.vue'
+import router from './router'
 
-import AOS from 'aos';
-import 'aos/dist/aos.css'; // Import AOS CSS
+// Bootstrap CSS + selective JS modules (not the entire bundle)
+import 'bootstrap/dist/css/bootstrap.min.css'
+import 'bootstrap/js/dist/modal'
+import 'bootstrap/js/dist/collapse'
+import 'bootstrap/js/dist/carousel'
+import 'bootstrap/js/dist/dropdown'
+import 'bootstrap/js/dist/tab'
 
-import VCalendar from 'v-calendar';
-import 'v-calendar/dist/style.css'; // Import v-calendar CSS
+import './assets/css/app.css'
 
-// 只在 localhost 環境下啟用 Vue DevTools
-if (process.env.NODE_ENV === 'development') {
-  const hostname = window.location.hostname;
-  if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
-    // 禁用 Vue DevTools
-    if (window.__VUE_DEVTOOLS_GLOBAL_HOOK__) {
-      window.__VUE_DEVTOOLS_GLOBAL_HOOK__.enabled = false;
-    }
-    // 設置 Vue 配置以禁用 devtools
-    if (typeof window !== 'undefined') {
-      window.__VUE_PROD_DEVTOOLS__ = false;
-    }
-  }
-}
+// AOS scroll animations
+import AOS from 'aos'
+import 'aos/dist/aos.css'
 
-const app = createApp(App);
+// Note: VCalendar is NOT registered globally anymore.
+// It should be imported locally in components that need it (e.g., student/Schedule.vue).
 
-app.use(router);
-app.use(VCalendar, {}); // Use v-calendar
+const app = createApp(App)
+app.use(router)
+app.mount('#app')
 
-app.mount('#app');
-
+// Initialize AOS with performance-friendly defaults
 AOS.init({
-  // Global settings:
-  disable: false, // accepts following values: 'phone', 'tablet', 'mobile', boolean, expression or function
-  startEvent: 'DOMContentLoaded', // name of the event dispatched on the document, that AOS should initialize on
-  initClassName: 'aos-init', // class applied after initialization
-  animatedClassName: 'aos-animate', // class applied on animation
-  useClassNames: false, // if true, will add 'aos-' + classname to the animated element
-  disableMutationObserver: false, // disables automatic mutations' detections (advanced)
-  debounceDelay: 50, // the delay on debounce used while resizing window (advanced)
-  throttleDelay: 99, // the delay on throttle used while scrolling the page (advanced)
+  offset: 120,
+  delay: 0,
+  duration: 1000,
+  easing: 'ease',
+  once: true, // Changed: animate only once for better performance
+  mirror: false,
+})
 
-  // Settings that can be overridden on per-element basis, by `data-aos-*` attributes:
-  offset: 120, // offset (in px) from the original trigger point
-  delay: 0, // values from 0 to 3000, with step 50ms
-  duration: 1000, // values from 0 to 3000, with step 50ms
-  easing: 'ease', // default easing for AOS animations
-  once: false, // whether animation should happen only once - while scrolling down
-  mirror: false, // whether elements should animate out while scrolling past them
-  anchorPlacement: 'top-bottom', // defines which position of the element regarding to window should trigger the animation
-});
+// Re-trigger AOS on route changes (fixes animations not working after SPA navigation)
+router.afterEach(() => {
+  setTimeout(() => AOS.refresh(), 300)
+})

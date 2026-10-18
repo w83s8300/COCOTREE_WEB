@@ -2,22 +2,25 @@
   <div class="add-style">
     <form @submit.prevent="submitForm">
       <div class="form-group">
-        <label for="name">風格名稱:</label>
-        <input type="text" id="name" v-model="style.name" required>
+        <label for="name" class="form-label">風格名稱:</label>
+        <input type="text" id="name" class="form-control" v-model="style.name" required>
       </div>
       <div class="form-group">
-        <label for="description">風格描述:</label>
-        <textarea id="description" v-model="style.description"></textarea>
+        <label for="description" class="form-label">風格描述:</label>
+        <textarea id="description" class="form-control" v-model="style.description"></textarea>
       </div>
-      <button type="submit" class="btn btn-primary">{{ isEditMode ? '更新' : '新增' }}</button>
-      <button type="button" class="btn btn-secondary" @click="closeModal">取消</button>
+      <button type="submit" class="btn btn-primary" :disabled="submitting">
+        <span v-if="submitting" class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+        {{ isEditMode ? '更新' : '新增' }}
+      </button>
+      <button type="button" class="btn btn-secondary ms-2" @click="closeModal">取消</button>
     </form>
   </div>
 </template>
 
 <script>
-import axios from 'axios';
-import { API_ENDPOINTS, buildApiUrl } from '@/utils/api.js';
+import api, { API_ENDPOINTS } from '@/utils/api';
+import { showToast } from '@/utils/toast';
 
 export default {
   props: {
@@ -26,26 +29,42 @@ export default {
       default: null
     }
   },
+  emits: ['style-updated', 'close-modal'],
   data() {
     return {
       style: {
         name: '',
         description: ''
       },
-      isEditMode: false
+      isEditMode: false,
+      submitting: false
     };
   },
-  created() {
-    if (this.styleId) {
-      this.isEditMode = true;
-      this.fetchStyle(this.styleId);
+  watch: {
+    styleId: {
+      immediate: true,
+      handler(newId) {
+        if (newId) {
+          this.isEditMode = true;
+          this.fetchStyle(newId);
+        } else {
+          this.isEditMode = false;
+          this.resetForm();
+        }
+      }
     }
   },
   methods: {
+    resetForm() {
+      this.style = {
+        name: '',
+        description: ''
+      };
+    },
     fetchStyle(id) {
-      axios.get(`${API_ENDPOINTS.STYLES}/${id}`)
-        .then(response => {
-          this.style = response.data.style;
+      api.get(`${API_ENDPOINTS.STYLES}/${id}`)
+        .then(data => {
+          this.style = data.style;
         })
         .catch(error => {
           console.error('獲取風格資料失敗:', error);
@@ -59,25 +78,33 @@ export default {
       }
     },
     addStyle() {
-      axios.post(API_ENDPOINTS.STYLES, this.style)
+      this.submitting = true;
+      api.post(API_ENDPOINTS.STYLES, this.style)
         .then(() => {
-          alert('風格新增成功！');
+          showToast('風格新增成功！', 'success');
           this.$emit('style-updated');
         })
         .catch(error => {
           console.error(error);
-          alert('新增風格失敗！');
+          showToast('新增風格失敗！', 'error');
+        })
+        .finally(() => {
+          this.submitting = false;
         });
     },
     updateStyle() {
-      axios.put(`${API_ENDPOINTS.STYLES}/${this.style.id}`, this.style)
+      this.submitting = true;
+      api.put(`${API_ENDPOINTS.STYLES}/${this.style.id}`, this.style)
         .then(() => {
-          alert('風格更新成功！');
+          showToast('風格更新成功！', 'success');
           this.$emit('style-updated');
         })
         .catch(error => {
           console.error(error);
-          alert('更新風格失敗！');
+          showToast('更新風格失敗！', 'error');
+        })
+        .finally(() => {
+          this.submitting = false;
         });
     },
     closeModal() {
@@ -93,17 +120,5 @@ export default {
 }
 .form-group {
   margin-bottom: 15px;
-}
-label {
-  display: block;
-  margin-bottom: 5px;
-}
-input, textarea {
-  width: 100%;
-  padding: 8px;
-  box-sizing: border-box;
-}
-button {
-  margin-right: 10px;
 }
 </style>

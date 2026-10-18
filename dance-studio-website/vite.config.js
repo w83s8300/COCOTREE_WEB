@@ -1,28 +1,27 @@
 import { fileURLToPath, URL } from 'node:url'
-
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
 // https://vite.dev/config/
-export default defineConfig(({ command, mode }) => {
-  const isLocalhost = mode === 'development';
-  
+export default defineConfig(({ mode }) => {
   return {
     server: {
       host: '0.0.0.0',
       port: 5173,
       watch: {
-        usePolling: true,
+        usePolling: true, // Required for Docker volume mounts
       },
-      allowedHosts: [
-        'w83s8300.ddns.net'
-        // 如果有其他主機名稱也需要允許，可以在此加入
-      ]
+      proxy: {
+        '/api': {
+          target: process.env.API_PROXY_TARGET || 'http://localhost:8001',
+          changeOrigin: true,
+        }
+      },
+      allowedHosts: true
     },
     plugins: [
       vue(),
-      // 在生產環境下禁用 Vue DevTools
       ...(mode === 'development' ? [vueDevTools()] : []),
     ],
     resolve: {
@@ -30,5 +29,16 @@ export default defineConfig(({ command, mode }) => {
         '@': fileURLToPath(new URL('./src', import.meta.url))
       },
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'vendor-vue': ['vue', 'vue-router'],
+            'vendor-bootstrap': ['bootstrap'],
+            'vendor-axios': ['axios'],
+          }
+        }
+      }
+    }
   }
 })

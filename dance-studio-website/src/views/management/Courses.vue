@@ -2,48 +2,78 @@
   <div class="courses">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h2>課程列表</h2>
-      <button @click="addNewCourse" class="btn btn-success">新增課程</button>
+      <button @click="openCreate" class="btn btn-success">
+        <i class="bi bi-plus-lg me-1"></i>新增課程
+      </button>
     </div>
-    <table class="course-table">
-      <thead>
-        <tr>
-          <th>課程名稱</th>
-          <th>難度</th>
-          <th>風格</th>
-          <th>時長</th>
-          <th>人數上限</th>
-          <th>扣堂數</th>
-          <th>老師</th>
-          <th>操作</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="course in courses" :key="course.id">
-          <td>{{ course.name }}</td>
-          <td>{{ course.level }}</td>
-          <td>{{ course.style_name }}</td>
-          <td>{{ course.duration_minutes }} 分鐘</td>
-          <td>{{ course.max_students }}</td>
-          <td>{{ course.price }} 堂</td>
-          <td>{{ course.teacher_name }}</td>
-          <td>
-            <button @click="editCourse(course.id)" class="btn btn-primary btn-sm">編輯</button>
-            <button @click="deleteCourse(course.id)" class="btn btn-danger btn-sm">移除</button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+
+    <!-- 載入中狀態 -->
+    <div v-if="loading" class="text-center py-5">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">載入中...</span>
+      </div>
+      <p class="mt-2 text-muted">正在載入課程資料...</p>
+    </div>
+
+    <!-- 錯誤狀態 -->
+    <div v-else-if="error" class="alert alert-danger d-flex justify-content-between align-items-center" role="alert">
+      <span>{{ error }}</span>
+      <button @click="fetchCourses" class="btn btn-outline-danger btn-sm">重新嘗試</button>
+    </div>
+
+    <!-- 空資料狀態 -->
+    <div v-else-if="courses.length === 0" class="text-center py-5 text-muted">
+      <p>目前尚無課程資料，請點擊上方按鈕新增。</p>
+    </div>
+
+    <!-- 表格內容 -->
+    <div v-else class="table-responsive">
+      <table class="table table-hover table-bordered align-middle">
+        <thead class="table-light">
+          <tr>
+            <th scope="col">課程名稱</th>
+            <th scope="col">難度</th>
+            <th scope="col">舞風</th>
+            <th scope="col">時長</th>
+            <th scope="col">人數上限</th>
+            <th scope="col">扣堂數</th>
+            <th scope="col">授課老師</th>
+            <th scope="col" class="text-center" style="width: 150px;">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="course in courses" :key="course.id">
+            <td class="fw-bold">{{ course.name }}</td>
+            <td><span class="badge bg-secondary">{{ course.level }}</span></td>
+            <td>{{ course.style_name || '未指定' }}</td>
+            <td>{{ course.duration_minutes }} 分鐘</td>
+            <td>{{ course.max_students }} 人</td>
+            <td>{{ course.price ? `${course.price} 堂` : '-' }}</td>
+            <td>{{ course.teacher_name || '未指定' }}</td>
+            <td class="text-center">
+              <button @click="openEdit(course.id)" class="btn btn-primary btn-sm me-1">編輯</button>
+              <button @click="deleteCourse(course.id)" class="btn btn-danger btn-sm">刪除</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
     <!-- Bootstrap Modal for adding/editing course -->
     <div class="modal fade" id="editCourseModal" tabindex="-1" aria-labelledby="editCourseModalLabel" aria-hidden="true">
       <div class="modal-dialog modal-lg">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title" id="editCourseModalLabel">{{ editingCourseId ? '編輯課程' : '新增課程' }}</h5>
+            <h5 class="modal-title" id="editCourseModalLabel">{{ editingId ? '編輯課程' : '新增課程' }}</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
-            <AddCourse v-if="showEditModal" :courseId="editingCourseId" @course-updated="handleCourseUpdated" @close-modal="closeEditModal" />
+            <AddCourse
+              v-if="showForm"
+              :courseId="editingId"
+              @course-updated="handleCourseUpdated"
+              @close-modal="closeModal"
+            />
           </div>
         </div>
       </div>
@@ -52,74 +82,64 @@
 </template>
 
 <script>
-import apiService from '@/utils/api';
-import AddCourse from '../forms/AddCourse.vue'; // 引入 AddCourse 組件
-import { Modal } from 'bootstrap'; // 引入 Bootstrap Modal JS
+import api, { API_ENDPOINTS } from '@/utils/api';
+import AddCourse from '../forms/AddCourse.vue';
+import { useCrudModal } from '@/composables/useCrudModal';
+import { showToast } from '@/utils/toast';
+import { showConfirm } from '@/utils/dialog';
 
 export default {
+  name: 'Courses',
   components: {
     AddCourse
+  },
+  setup() {
+    const { showForm, editingId, initModal, openCreate, openEdit, closeModal } = useCrudModal('editCourseModal');
+    return { showForm, editingId, initModal, openCreate, openEdit, closeModal };
   },
   data() {
     return {
       courses: [],
-      showEditModal: false, // 控制 AddCourse 組件的渲染
-      editingCourseId: null,
-      editModal: null // 用於儲存 Bootstrap Modal 實例
+      loading: false,
+      error: null
     };
   },
   mounted() {
-    // 在組件掛載後初始化 Bootstrap Modal
-    this.editModal = new Modal(document.getElementById('editCourseModal'));
-    // 監聽 modal 關閉事件，以便重置狀態
-    document.getElementById('editCourseModal').addEventListener('hidden.bs.modal', () => {
-      this.showEditModal = false;
-      this.editingCourseId = null;
-    });
+    this.initModal();
   },
   created() {
     this.fetchCourses();
   },
   methods: {
-    fetchCourses() {
-      apiService.get('courses')
-        .then(response => response.json())
-        .then(data => {
-          this.courses = data.courses;
-        })
-        .catch(error => {
-          console.error('獲取課程列表失敗:', error);
-        });
+    async fetchCourses() {
+      this.loading = true;
+      this.error = null;
+      try {
+        const data = await api.get(API_ENDPOINTS.COURSES);
+        this.courses = data.courses || [];
+      } catch (err) {
+        console.error('獲取課程列表失敗:', err);
+        this.error = '獲取課程列表失敗，請稍後再試。';
+      } finally {
+        this.loading = false;
+      }
     },
-    addNewCourse() {
-      this.editingCourseId = null; // 設定為 null 表示新增模式
-      this.showEditModal = true; // 渲染 AddCourse 組件
-      this.editModal.show(); // 顯示 Bootstrap Modal
-    },
-    editCourse(id) {
-      this.editingCourseId = id;
-      this.showEditModal = true; // 渲染 AddCourse 組件
-      this.editModal.show(); // 顯示 Bootstrap Modal
-    },
-    deleteCourse(id) {
-      if (confirm('確定要刪除這個課程嗎？')) {
-        apiService.delete(`courses/${id}`)
-          .then(response => response.json())
-          .then(() => {
-            this.fetchCourses(); // Refresh the list after deletion
-          })
-          .catch(error => {
-            console.error('刪除課程失敗:', error);
-          });
+    async deleteCourse(id) {
+      const confirmed = await showConfirm('確定要刪除這個課程嗎？此動作無法復原。');
+      if (!confirmed) return;
+
+      try {
+        await api.delete(`${API_ENDPOINTS.COURSES}/${id}`);
+        showToast('課程已成功刪除！', 'success');
+        this.fetchCourses();
+      } catch (err) {
+        console.error('刪除課程失敗:', err);
+        showToast('刪除課程失敗，請重試。', 'error');
       }
     },
     handleCourseUpdated() {
-      this.fetchCourses(); // 課程數據更新後刷新列表
-      this.editModal.hide(); // 關閉 Bootstrap Modal
-    },
-    closeEditModal() {
-      // 由 AddCourse 組件發出，用於取消或錯誤時關閉 modal
-      this.editModal.hide();
+      this.fetchCourses();
+      this.closeModal();
     }
   }
 };
@@ -127,21 +147,6 @@ export default {
 
 <style scoped>
 .courses {
-  padding: 20px;
-}
-.course-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-.course-table th, .course-table td {
-  border: 1px solid #ccc;
-  padding: 8px;
-  text-align: left;
-}
-.course-table th {
-  background-color: #f2f2f2;
-}
-.course-table button {
-  margin-right: 5px;
+  padding: 10px;
 }
 </style>

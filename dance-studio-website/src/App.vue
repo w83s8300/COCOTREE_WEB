@@ -1,68 +1,53 @@
 <template>
   <div id="app">
     <!-- Splash Screen -->
-    <div v-if="showSplash" :class="{'splash-screen': true, 'hidden': hideSplash}">
-      <img src="/favicon.ico" alt="Logo" class="splash-logo">
-    </div>
+    <Transition name="fade">
+      <div v-if="showSplash" class="splash-screen">
+        <img src="/favicon.ico" alt="Dance Studio Logo" class="splash-logo">
+      </div>
+    </Transition>
 
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top" aria-label="主導航列">
       <div class="container-fluid">
-        <a class="navbar-brand" href="./">Dance Studio</a>
-        <button ref="navbarToggler" class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <router-link class="navbar-brand" to="/">Dance Studio</router-link>
+        <button
+          ref="navbarToggler"
+          class="navbar-toggler"
+          type="button"
+          data-bs-toggle="collapse"
+          data-bs-target="#navbarNav"
+          aria-controls="navbarNav"
+          aria-expanded="false"
+          aria-label="切換導航"
+        >
           <span class="navbar-toggler-icon"></span>
         </button>
         <div ref="navbarNav" class="collapse navbar-collapse" id="navbarNav">
           <ul class="navbar-nav">
-            <li class="nav-item">
-              <router-link class="nav-link" to="/" @click="closeNavbar">首頁</router-link>
-            </li>
-            <li class="nav-item">
-              <router-link class="nav-link" to="/about" @click="closeNavbar">關於我們</router-link>
-            </li>
-            <li class="nav-item">
-              <router-link class="nav-link" to="/history" @click="closeNavbar">歷史</router-link>
-            </li>
-            <li class="nav-item">
-              <router-link class="nav-link" to="/instructors" @click="closeNavbar">師資介紹</router-link>
-            </li>
-            <li class="nav-item">
-              <router-link class="nav-link" to="/schedule" @click="closeNavbar">課程表</router-link>
-            </li>
-            <li class="nav-item">
-              <router-link class="nav-link" to="/pricing" @click="closeNavbar">費用</router-link>
-            </li>
-            <li class="nav-item">
-              <router-link class="nav-link" to="/gallery" @click="closeNavbar">畫廊</router-link>
-            </li>
-            <li class="nav-item">
-              <router-link class="nav-link" to="/venue" @click="closeNavbar">場地</router-link>
-            </li>
-            <li class="nav-item">
-              <router-link class="nav-link" to="/faq" @click="closeNavbar">常見問題</router-link>
-            </li>
-            <li class="nav-item">
-              <router-link class="nav-link" to="/contact" @click="closeNavbar">聯絡我們</router-link>
-            </li>
-            <li class="nav-item">
-              <router-link class="nav-link" to="/admin" @click="closeNavbar">管理</router-link>
+            <li v-for="link in navLinks" :key="link.to" class="nav-item">
+              <router-link class="nav-link" :to="link.to" @click="closeNavbar">
+                {{ link.label }}
+              </router-link>
             </li>
           </ul>
         </div>
       </div>
     </nav>
+
     <main class="content-wrapper">
-      <router-view/>
+      <router-view />
     </main>
 
     <footer class="footer bg-dark text-white py-4">
       <div class="container">
         <div class="row">
           <div class="col-md-6 text-center text-md-start">
-            <p>&copy; 2024 Dance Studio. All rights reserved.</p>
+            <p>&copy; {{ currentYear }} Dance Studio. All rights reserved.</p>
             <div class="social-icons mb-3 mb-md-0">
-              <a href="#" class="text-white me-3"><i class="bi bi-facebook"></i></a>
-              <a href="#" class="text-white me-3"><i class="bi bi-instagram"></i></a>
-              <a href="#" class="text-white"><i class="bi bi-youtube"></i></a>
+              <a href="#" class="text-white me-3" aria-label="Facebook"><i class="bi bi-facebook"></i></a>
+              <a href="#" class="text-white me-3" aria-label="Instagram"><i class="bi bi-instagram"></i></a>
+              <a href="#" class="text-white" aria-label="YouTube"><i class="bi bi-youtube"></i></a>
             </div>
           </div>
           <div class="col-md-6 text-center text-md-end">
@@ -72,64 +57,80 @@
         </div>
       </div>
     </footer>
+
+    <!-- Global UI Components -->
+    <ConfirmModal />
+    <AppToast />
   </div>
 </template>
 
 <script>
+import { Collapse } from 'bootstrap'
+import ConfirmModal from './components/ConfirmModal.vue'
+import AppToast from './components/AppToast.vue'
+
 export default {
   name: 'App',
+  components: { ConfirmModal, AppToast },
   data() {
     return {
       showSplash: true,
-      hideSplash: false,
-    };
+      navLinks: [
+        { to: '/', label: '首頁' },
+        { to: '/about', label: '關於我們' },
+        { to: '/history', label: '歷史' },
+        { to: '/instructors', label: '師資介紹' },
+        { to: '/schedule', label: '課程表' },
+        { to: '/pricing', label: '費用' },
+        { to: '/gallery', label: '畫廊' },
+        { to: '/venue', label: '場地' },
+        { to: '/faq', label: '常見問題' },
+        { to: '/contact', label: '聯絡我們' },
+      ]
+    }
+  },
+  computed: {
+    currentYear() {
+      return new Date().getFullYear()
+    }
   },
   methods: {
     closeNavbar() {
-      // Check if the navbar collapse element is currently shown
-      if (this.$refs.navbarNav.classList.contains('show')) {
-        // Programmatically click the toggler button to close the navbar
-        this.$refs.navbarToggler.click();
+      const navbarNav = this.$refs.navbarNav
+      if (navbarNav && navbarNav.classList.contains('show')) {
+        const collapse = Collapse.getOrCreateInstance(navbarNav)
+        collapse.hide()
       }
-    },
+    }
   },
   mounted() {
-    // Hide splash screen after a delay
+    // Shorter splash - dismiss after 1.2s (was 2.5s)
     setTimeout(() => {
-      this.hideSplash = true;
-      setTimeout(() => {
-        this.showSplash = false;
-      }, 1000); // Corresponds to CSS transition
-    }, 1500); // Show splash for 1.5s
-  },
-};
+      this.showSplash = false
+    }, 1200)
+  }
+}
 </script>
 
 <style>
-/* Global styles for App.vue */
+/* Splash Screen */
 .splash-screen {
   position: fixed;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: #000; /* Black background */
+  background-color: #000;
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 9999; /* Ensure it's on top of everything */
-  transition: opacity 1s ease-out; /* Fade out animation duration */
-}
-
-.splash-screen.hidden {
-  opacity: 0;
-  pointer-events: none; /* Disable interactions after fading out */
+  z-index: 9999;
 }
 
 .splash-logo {
-  width: 150px; /* Adjust size as needed */
+  width: 150px;
   height: 150px;
-  animation: pulse 1.5s infinite alternate; /* Simple pulse animation for the logo */
+  animation: pulse 1.5s infinite alternate;
 }
 
 @keyframes pulse {
@@ -137,19 +138,32 @@ export default {
   to { transform: scale(1.1); }
 }
 
-/* Add padding to content to prevent it from being hidden behind fixed navbar */
+/* Vue Transition for splash */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.8s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* Content layout - prevents content from hiding behind fixed navbar */
 .content-wrapper {
-  padding-top: 70px; /* Adjust this value based on your navbar's actual height */
-  min-height: calc(100vh - 70px - 150px); /* Adjust 150px based on actual footer height */
+  padding-top: 70px;
+  min-height: calc(100vh - 220px);
 }
 
 .footer {
-  /* Add any specific styles for the footer here */
-  /* For example, to push it to the bottom if content is short */
-  margin-top: auto; /* Pushes the footer to the bottom */
+  margin-top: auto;
 }
 
 .social-icons a {
   font-size: 1.5rem;
+  transition: opacity 0.3s;
+}
+
+.social-icons a:hover {
+  opacity: 0.7;
 }
 </style>

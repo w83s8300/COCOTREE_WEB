@@ -78,11 +78,13 @@
 </template>
 
 <script>
+import { ref } from 'vue';
 import { Modal, Carousel } from 'bootstrap';
-import NewsList from '../../components/NewsList.vue';
-import FeaturedInstructor from '../../components/FeaturedInstructor.vue';
-import RecentEvents from '../../components/RecentEvents.vue';
-import VideoGallery from '../../components/VideoGallery.vue';
+import { useCarouselSwipe } from '@/composables/useCarouselSwipe';
+import NewsList from '@/components/NewsList.vue';
+import FeaturedInstructor from '@/components/FeaturedInstructor.vue';
+import RecentEvents from '@/components/RecentEvents.vue';
+import VideoGallery from '@/components/VideoGallery.vue';
 
 export default {
   name: 'Home',
@@ -92,89 +94,126 @@ export default {
     RecentEvents,
     VideoGallery,
   },
+  setup() {
+    const heroCarousel = ref(null);
+    const carouselInstance = ref(null);
+    const { setupSwipe } = useCarouselSwipe(heroCarousel, carouselInstance);
+
+    return { heroCarousel, carouselInstance, setupSwipe };
+  },
   data() {
     return {
       selectedNews: {},
       selectedEvent: {},
-      carousel: null,
-      startX: 0,
-      isSwiping: false,
-      
+      newsModal: null,
+      eventModal: null,
+      events: [
+        {
+          title: '年度成果展',
+          shortDescription: '見證學員們一年來的努力與成長，帶來最精彩的演出。',
+          fullContent: '一年一度的年度成果展即將盛大登場！本次展演將匯集各班級學員的精彩舞碼，從古典芭蕾到現代街舞，多元風格一次呈現。這不僅是學員們展現學習成果的舞台，更是對他們辛勤付出的最佳肯定。歡迎所有熱愛舞蹈的朋友們蒞臨觀賞，一同感受舞蹈的魅力與學員們的熱情！',
+          date: '2024年12月15日',
+          image: 'https://picsum.photos/600/400?random=5',
+        },
+        {
+          title: '街舞比賽',
+          shortDescription: '邀請各路好手一同切磋舞技，爭奪高額獎金。',
+          fullContent: '熱血沸騰的街舞大賽即將引爆！無論你是 Locking、Popping、Breaking 還是 Hip-Hop 的高手，都歡迎你來挑戰。本次比賽設有豐厚獎金，並邀請業界知名舞者擔任評審，提供專業點評。這是一個展現自我、交流舞技的絕佳機會，快來報名，用你的舞步征服全場！',
+          date: '2024年11月20日',
+          image: 'https://picsum.photos/600/400?random=6',
+        },
+        {
+          title: '國際大師工作坊',
+          shortDescription: '難得的機會，邀請到國際知名舞者親自授課。',
+          fullContent: '千載難逢的機會！我們榮幸邀請到國際頂尖舞者親臨本工作室，舉辦為期三天的舞蹈工作坊。大師將親自傳授其獨特的舞蹈技巧與表演理念，無論你是初學者還是資深舞者，都能從中獲益良多。名額有限，請盡速報名，把握與大師近距離學習的寶貴機會！',
+          date: '2024年10月5日',
+          image: 'https://picsum.photos/600/400?random=7',
+        },
+      ],
     };
   },
   mounted() {
-    this.carousel = new Carousel(this.$refs.heroCarousel);
-    const carouselElement = this.$refs.heroCarousel;
+    this.carouselInstance = new Carousel(this.$refs.heroCarousel);
+    this.setupSwipe();
 
-    carouselElement.addEventListener('mousedown', this.handleMouseDown);
+    // Create modals once, reuse them
+    this.newsModal = new Modal(document.getElementById('newsDetailModal'));
+    this.eventModal = new Modal(document.getElementById('eventDetailModal'));
   },
   beforeUnmount() {
-    const carouselElement = this.$refs.heroCarousel;
-    if (carouselElement) {
-      carouselElement.removeEventListener('mousedown', this.handleMouseDown);
-      document.removeEventListener('mousemove', this.handleMouseMove);
-      document.removeEventListener('mouseup', this.handleMouseUp);
-    }
+    // Dispose modal instances to prevent memory leaks
+    if (this.newsModal) this.newsModal.dispose();
+    if (this.eventModal) this.eventModal.dispose();
+    if (this.carouselInstance) this.carouselInstance.dispose();
   },
   methods: {
     showNewsDetail(newsItem) {
       this.selectedNews = newsItem;
-      const newsDetailModal = new Modal(document.getElementById('newsDetailModal'));
-      newsDetailModal.show();
+      this.newsModal.show();
     },
     showEventDetail(eventItem) {
       this.selectedEvent = eventItem;
-      const eventDetailModal = new Modal(document.getElementById('eventDetailModal'));
-      eventDetailModal.show();
-    },
-    handleMouseDown(e) {
-      this.startX = e.pageX;
-      this.isSwiping = true;
-      document.addEventListener('mousemove', this.handleMouseMove);
-      document.addEventListener('mouseup', this.handleMouseUp);
-    },
-    handleMouseMove(e) {
-      if (!this.isSwiping) return;
-      e.preventDefault();
-    },
-    handleMouseUp(e) {
-      if (!this.isSwiping) return;
-      this.isSwiping = false;
-      const endX = e.pageX;
-      const diffX = endX - this.startX;
-
-      if (diffX > 50) {
-        this.carousel.prev();
-      } else if (diffX < -50) {
-        this.carousel.next();
-      }
-      document.removeEventListener('mousemove', this.handleMouseMove);
-      document.removeEventListener('mouseup', this.handleMouseUp);
-    },
-    handleMouseLeave() {
-      // This event listener is no longer strictly necessary for stopping swipe, as mouseup on document handles it.
-      // However, if you want to stop swiping specifically when the mouse leaves the carousel element *without* releasing the button,
-      // you might keep it and remove the document listeners here too.
-      // For now, let's rely on mouseup on document.
-      // If you re-enable this, make sure to remove document listeners here as well.
+      this.eventModal.show();
     },
   },
 };
 </script>
 
-<style src="../../assets/css/Home.css"></style>
-<style>
+<style scoped>
+.carousel-item img {
+  height: 600px;
+  object-fit: cover;
+}
+
+.bg-light {
+  background-color: #f8f9fa !important;
+}
+
+/* Recent Events Card Styling — needs :deep() for child component cards */
+:deep(.card) {
+  height: 100%;
+}
+
+:deep(.card-img-top) {
+  height: 200px;
+  object-fit: cover;
+}
+
+:deep(.card-body) {
+  display: flex;
+  flex-direction: column;
+  min-height: 150px;
+}
+
+:deep(.card-text) {
+  flex-grow: 1;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+/* Ensure columns fill row height */
+:deep(.container.my-5 > .row) {
+  display: flex;
+  align-items: stretch;
+}
+
+/* Add padding to content to prevent it from being hidden behind fixed navbar */
+.content-wrapper {
+  padding-top: 50px;
+}
+
 .carousel-inner img {
   pointer-events: none;
 }
 
 /* Disable text selection for the carousel */
 #heroCarousel {
-  -webkit-touch-callout: none; /* iOS Safari */
-  -webkit-user-select: none;   /* Safari */
-  -khtml-user-select: none;    /* Konqueror HTML */
-  -moz-user-select: none;      /* Old versions of Firefox */
-  -ms-user-select: none;       /* Internet Explorer/Edge */
-  user-select: none;           /* Non-prefixed version, currently supported by Chrome, Edge, Opera and Firefox */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
 }
 </style>

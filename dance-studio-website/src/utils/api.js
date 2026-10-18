@@ -1,67 +1,68 @@
-// API 配置 - 動態檢測環境並設置正確的 API 基礎 URL
-const getApiBaseUrl = () => {
-  // 如果是本地開發環境
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    return 'http://localhost:8001/api';
-  }
-  
-  // 如果是外網訪問，使用相同的 protocol 和 hostname，但端口改為 8001
-  const protocol = window.location.protocol;
-  const hostname = window.location.hostname;
-  
-  // 如果是 HTTPS，需要通過代理訪問 API（假設您已設置 Nginx 代理）
-  if (protocol === 'https:') {
-    return `${protocol}//${hostname}/api`;
-  }
-  
-  // 如果是 HTTP，直接使用 8001 端口
-  return `${protocol}//${hostname}:8001/api`;
-};
+import axios from 'axios'
 
-export const API_BASE_URL = getApiBaseUrl();
+/**
+ * Unified API service for the Dance Studio application.
+ *
+ * Architecture:
+ * - Development: Browser → Vite dev proxy (/api) → Backend (localhost:8001 or Docker backend:8001)
+ * - Production:  Browser → Nginx proxy (/api) → Backend
+ *
+ * The baseURL is always '/api' (relative), letting the dev server or reverse proxy handle routing.
+ * Override with VITE_API_BASE_URL env var if needed.
+ */
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+  timeout: 15000,
+  headers: { 'Content-Type': 'application/json' }
+})
 
-// 常用的 API 端點
+/**
+ * Response interceptor:
+ * - Success: auto-unwraps response.data so callers get parsed JSON directly
+ * - Error: extracts error message and rejects with a structured error object
+ */
+api.interceptors.response.use(
+  response => response.data,
+  error => {
+    const message = error.response?.data?.error
+      || error.response?.data?.message
+      || error.message
+      || '請求失敗'
+    const status = error.response?.status
+
+    if (import.meta.env.DEV) {
+      console.error(`[API Error] ${status || 'Network'}: ${message}`)
+    }
+
+    return Promise.reject({ message, status, raw: error })
+  }
+)
+
+/**
+ * API endpoint constants (relative paths).
+ * The axios instance baseURL ('/api') is automatically prepended.
+ */
 export const API_ENDPOINTS = {
-  TEACHERS: `${API_BASE_URL}/teachers`,
-  STUDENTS: `${API_BASE_URL}/students`,
-  STYLES: `${API_BASE_URL}/styles`,
-  ROOMS: `${API_BASE_URL}/rooms`,
-  COURSES: `${API_BASE_URL}/courses`,
-  SCHEDULES: `${API_BASE_URL}/schedules`,
-  ENROLLMENTS: `${API_BASE_URL}/enrollments`
-};
+  TEACHERS: '/teachers',
+  STUDENTS: '/students',
+  STYLES: '/styles',
+  ROOMS: '/rooms',
+  COURSES: '/courses',
+  SCHEDULES: '/schedules',
+  ENROLLMENTS: '/enrollments'
+}
 
-// 工具函數：構建完整的 API URL
+/**
+ * Build a clean API path from an endpoint string.
+ * Handles backward compatibility with paths that include '/api' prefix.
+ *
+ * @param {string} endpoint - API endpoint path (e.g., '/enrollments/123' or '/api/enrollments/123')
+ * @returns {string} Clean path without '/api' prefix
+ */
 export const buildApiUrl = (endpoint) => {
-  // 移除開頭的 /api 如果存在，因為 API_BASE_URL 已經包含了
-  const cleanEndpoint = endpoint.replace(/^\/api/, '');
-  if (cleanEndpoint.startsWith('/')) {
-    return `${API_BASE_URL}${cleanEndpoint}`;
-  }
-  return `${API_BASE_URL}/${cleanEndpoint}`;
-};
+  let clean = endpoint.replace(/^\/api/, '')
+  if (!clean.startsWith('/')) clean = '/' + clean
+  return clean
+}
 
-console.log('API 配置:', {
-  hostname: window.location.hostname,
-  protocol: window.location.protocol,
-  apiBaseUrl: API_BASE_URL
-});
-
-// API 服務物件
-const apiService = {
-  get: (endpoint) => fetch(buildApiUrl(endpoint)),
-  post: (endpoint, data) => fetch(buildApiUrl(endpoint), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  }),
-  put: (endpoint, data) => fetch(buildApiUrl(endpoint), {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  }),
-  delete: (endpoint) => fetch(buildApiUrl(endpoint), { method: 'DELETE' }),
-  buildUrl: buildApiUrl
-};
-
-export default apiService;
+export default api

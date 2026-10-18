@@ -1,65 +1,58 @@
 <template>
   <div class="faq-page">
     <!-- 1. Banner -->
-    <div class="banner">
-      <img src="https://picsum.photos/1920/500?random=33" alt="FAQ Banner" class="banner-img">
-      <div class="banner-text">
-        <h1>常見問題 / FAQ</h1>
-      </div>
-    </div>
+    <PageBanner image="https://picsum.photos/1920/500?random=33" title="常見問題 / FAQ" />
 
-    <!-- 2. FAQ Accordion -->
+    <!-- 2. FAQ Section -->
     <div class="container my-5">
-      <div class="accordion" id="faqAccordion">
-        <!-- FAQ 1 -->
-        <div class="accordion-item">
-          <h2 class="accordion-header" id="headingOne">
-            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne" aria-expanded="true" aria-controls="collapseOne">
-              完全沒有舞蹈基礎，可以上課嗎？
-            </button>
-          </h2>
-          <div id="collapseOne" class="accordion-collapse collapse show" aria-labelledby="headingOne" data-bs-parent="#faqAccordion">
-            <div class="accordion-body text-start">
-              當然可以！我們有專為初學者設計的入門課程，老師會從最基本的動作開始教起，帶領您輕鬆進入舞蹈的世界。
-            </div>
+      <!-- Search Input -->
+      <div class="row justify-content-center mb-4" data-aos="fade-up">
+        <div class="col-md-6">
+          <div class="input-group">
+            <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+            <input 
+              type="text" 
+              class="form-control" 
+              v-model="searchQuery" 
+              placeholder="搜尋關鍵字，例如：基礎、服裝、請假..."
+            />
           </div>
         </div>
-        <!-- FAQ 2 -->
-        <div class="accordion-item">
-          <h2 class="accordion-header" id="headingTwo">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo" aria-expanded="false" aria-controls="collapseTwo">
-              需要自己先報名一整期的課程嗎？
-            </button>
-          </h2>
-          <div id="collapseTwo" class="accordion-collapse collapse" aria-labelledby="headingTwo" data-bs-parent="#faqAccordion">
-            <div class="accordion-body text-start">
-              我們提供單堂體驗課和多樣的堂數卡方案，您可以根據自己的時間和需求彈性選擇，無需一次綁定長期課程。
-            </div>
-          </div>
+      </div>
+
+      <!-- FAQ Accordion -->
+      <div class="accordion shadow-sm rounded" id="faqAccordion" data-aos="fade-up">
+        <div v-if="filteredFaqs.length === 0" class="text-center py-5 text-muted">
+          <p>找不到符合關鍵字的常見問題，歡迎直接透過「聯絡我們」與我們聯繫！</p>
         </div>
-        <!-- FAQ 3 -->
-        <div class="accordion-item">
-          <h2 class="accordion-header" id="headingThree">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThree" aria-expanded="false" aria-controls="collapseThree">
-              上課需要穿著什麼樣的服裝？
+
+        <div 
+          v-for="(faq, index) in filteredFaqs" 
+          :key="faq.id" 
+          class="accordion-item"
+        >
+          <h2 class="accordion-header" :id="'heading' + faq.id">
+            <button 
+              class="accordion-button" 
+              :class="{ collapsed: index !== 0 }" 
+              type="button" 
+              data-bs-toggle="collapse" 
+              :data-bs-target="'#collapse' + faq.id" 
+              :aria-expanded="index === 0 ? 'true' : 'false'" 
+              :aria-controls="'collapse' + faq.id"
+            >
+              {{ faq.question }}
             </button>
           </h2>
-          <div id="collapseThree" class="accordion-collapse collapse" aria-labelledby="headingThree" data-bs-parent="#faqAccordion">
-            <div class="accordion-body text-start">
-              建議穿著輕便、有彈性的運動服裝，並穿著乾淨的運動鞋。特殊課程如 Heels 則建議穿著有跟的舞鞋。
-            </div>
-          </div>
-        </div>
-        <!-- FAQ 4 -->
-        <div class="accordion-item">
-          <h2 class="accordion-header" id="headingFour">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseFour" aria-expanded="false" aria-controls="collapseFour">
-              如果臨時有事不能來上課，可以請假嗎？
-            </button>
-          </h2>
-          <div id="collapseFour" class="accordion-collapse collapse" aria-labelledby="headingFour" data-bs-parent="#faqAccordion">
-            <div class="accordion-body text-start">
-              可以的。請您最晚於課程開始前 2 小時透過官方 LINE 或電話完成請假手續，我們將為您保留堂數。
+          <div 
+            :id="'collapse' + faq.id" 
+            class="accordion-collapse collapse" 
+            :class="{ show: index === 0 }" 
+            :aria-labelledby="'heading' + faq.id" 
+            data-bs-parent="#faqAccordion"
+          >
+            <div class="accordion-body text-start lh-base">
+              {{ faq.answer }}
             </div>
           </div>
         </div>
@@ -69,9 +62,59 @@
 </template>
 
 <script>
+import PageBanner from '@/components/PageBanner.vue';
+
 export default {
-  name: 'Faq'
-}
+  name: 'Faq',
+  components: {
+    PageBanner
+  },
+  data() {
+    return {
+      searchQuery: '',
+      faqs: [
+        {
+          id: 1,
+          question: '完全沒有舞蹈基礎，可以來上課嗎？',
+          answer: '當然可以！我們專門為初學者規劃了「入門基礎班」，老師會從最基礎的重心移動、律動踩點與肢體協調教起，循序漸進，帶領您無壓力地進入舞蹈的美好世界。'
+        },
+        {
+          id: 2,
+          question: '需要一次報名一整期或長期綁約嗎？',
+          answer: '完全不需要！我們提供單堂體驗價與彈性的堂數票卡方案（8堂、20堂、月費等），您可以根據自己的作息自由預約時段，不需要一次簽訂長期合約。'
+        },
+        {
+          id: 3,
+          question: '上課需要穿著什麼樣的服裝或裝備？',
+          answer: '建議穿著輕便、吸汗有彈性的運動便服，並務必攜帶一雙乾淨的「室內運動鞋」更換入室。特定舞風如 Heels 建議自備粗跟高跟鞋，其他課程不需特殊器材。'
+        },
+        {
+          id: 4,
+          question: '如果臨時有事不能來，可以請假保留堂數嗎？',
+          answer: '可以的！請最遲於上課時間開始前 2 小時透過線上系統取消或向官方 LINE 告知，即可保留該堂數並於期限內補課。'
+        },
+        {
+          id: 5,
+          question: '教室有提供淋浴間或更衣室嗎？',
+          answer: '有的，工作室備有獨立男女更衣空間、個人置物櫃、飲水機與休息交誼區，但目前未設置淋浴設備。'
+        }
+      ]
+    };
+  },
+  computed: {
+    filteredFaqs() {
+      if (!this.searchQuery.trim()) return this.faqs;
+      const q = this.searchQuery.trim().toLowerCase();
+      return this.faqs.filter(f => f.question.toLowerCase().includes(q) || f.answer.toLowerCase().includes(q));
+    }
+  }
+};
 </script>
 
-<style src="../../assets/css/Faq.css"></style>
+<style scoped>
+.accordion-button:not(.collapsed) {
+  background-color: #e7f1ff;
+  color: #0d6efd;
+  font-weight: 600;
+}
+</style>

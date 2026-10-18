@@ -2,38 +2,43 @@
   <div class="add-room">
     <form @submit.prevent="submitForm">
       <div class="form-group">
-        <label for="name">教室名稱:</label>
-        <input type="text" id="name" v-model="room.name" required>
+        <label for="name" class="form-label">教室名稱:</label>
+        <input type="text" id="name" class="form-control" v-model="room.name" required>
       </div>
       <div class="form-group">
-        <label for="capacity">容量:</label>
-        <input type="number" id="capacity" v-model="room.capacity">
+        <label for="capacity" class="form-label">容量:</label>
+        <input type="number" id="capacity" class="form-control" v-model="room.capacity">
       </div>
       <div class="form-group">
-        <label for="equipment">設備:</label>
-        <textarea id="equipment" v-model="room.equipment"></textarea>
+        <label for="equipment" class="form-label">設備:</label>
+        <textarea id="equipment" class="form-control" v-model="room.equipment"></textarea>
       </div>
       <div class="form-group">
-        <label for="description">描述:</label>
-        <textarea id="description" v-model="room.description"></textarea>
+        <label for="description" class="form-label">描述:</label>
+        <textarea id="description" class="form-control" v-model="room.description"></textarea>
       </div>
       <div class="form-group">
-        <label for="hourly_rate">時租費率:</label>
-        <input type="number" id="hourly_rate" v-model="room.hourly_rate">
+        <label for="hourly_rate" class="form-label">時租費率:</label>
+        <input type="number" id="hourly_rate" class="form-control" v-model="room.hourly_rate">
       </div>
       <div class="form-group">
-        <input type="checkbox" id="is_available" v-model="room.is_available">
-        <label for="is_available">是否可用</label>
+        <div class="form-check">
+          <input type="checkbox" id="is_available" class="form-check-input" v-model="room.is_available">
+          <label for="is_available" class="form-check-label">是否可用</label>
+        </div>
       </div>
-      <button type="submit" class="btn btn-primary">{{ isEditMode ? '更新' : '新增' }}</button>
-      <button type="button" class="btn btn-secondary" @click="closeModal">取消</button>
+      <button type="submit" class="btn btn-primary" :disabled="submitting">
+        <span v-if="submitting" class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+        {{ isEditMode ? '更新' : '新增' }}
+      </button>
+      <button type="button" class="btn btn-secondary ms-2" @click="closeModal">取消</button>
     </form>
   </div>
 </template>
 
 <script>
-import axios from 'axios';
-import { API_ENDPOINTS, buildApiUrl } from '@/utils/api.js';
+import api, { API_ENDPOINTS } from '@/utils/api';
+import { showToast } from '@/utils/toast';
 
 export default {
   props: {
@@ -42,6 +47,7 @@ export default {
       default: null
     }
   },
+  emits: ['room-updated', 'close-modal'],
   data() {
     return {
       room: {
@@ -52,20 +58,39 @@ export default {
         hourly_rate: null,
         is_available: true
       },
-      isEditMode: false
+      isEditMode: false,
+      submitting: false
     };
   },
-  created() {
-    if (this.roomId) {
-      this.isEditMode = true;
-      this.fetchRoom(this.roomId);
+  watch: {
+    roomId: {
+      immediate: true,
+      handler(newId) {
+        if (newId) {
+          this.isEditMode = true;
+          this.fetchRoom(newId);
+        } else {
+          this.isEditMode = false;
+          this.resetForm();
+        }
+      }
     }
   },
   methods: {
+    resetForm() {
+      this.room = {
+        name: '',
+        capacity: 20,
+        equipment: '',
+        description: '',
+        hourly_rate: null,
+        is_available: true
+      };
+    },
     fetchRoom(id) {
-      axios.get(`${API_ENDPOINTS.ROOMS}/${id}`)
-        .then(response => {
-          this.room = response.data.room;
+      api.get(`${API_ENDPOINTS.ROOMS}/${id}`)
+        .then(data => {
+          this.room = data.room;
         })
         .catch(error => {
           console.error('獲取教室資料失敗:', error);
@@ -79,25 +104,33 @@ export default {
       }
     },
     addRoom() {
-      axios.post(API_ENDPOINTS.ROOMS, this.room)
+      this.submitting = true;
+      api.post(API_ENDPOINTS.ROOMS, this.room)
         .then(() => {
-          alert('教室新增成功！');
+          showToast('教室新增成功！', 'success');
           this.$emit('room-updated');
         })
         .catch(error => {
           console.error(error);
-          alert('新增教室失敗！');
+          showToast('新增教室失敗！', 'error');
+        })
+        .finally(() => {
+          this.submitting = false;
         });
     },
     updateRoom() {
-      axios.put(`${API_ENDPOINTS.ROOMS}/${this.room.id}`, this.room)
+      this.submitting = true;
+      api.put(`${API_ENDPOINTS.ROOMS}/${this.room.id}`, this.room)
         .then(() => {
-          alert('教室更新成功！');
+          showToast('教室更新成功！', 'success');
           this.$emit('room-updated');
         })
         .catch(error => {
           console.error(error);
-          alert('更新教室失敗！');
+          showToast('更新教室失敗！', 'error');
+        })
+        .finally(() => {
+          this.submitting = false;
         });
     },
     closeModal() {
@@ -113,21 +146,5 @@ export default {
 }
 .form-group {
   margin-bottom: 15px;
-}
-label {
-  display: block;
-  margin-bottom: 5px;
-}
-input, textarea {
-  width: 100%;
-  padding: 8px;
-  box-sizing: border-box;
-}
-button {
-  padding: 10px 15px;
-  background-color: #4CAF50;
-  color: white;
-  border: none;
-  cursor: pointer;
 }
 </style>

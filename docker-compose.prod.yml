@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./backend:/app
+    working_dir: /app
+    command: ["python", "app.py"]
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  dance-studio-website:
+    build:
+      context: ./dance-studio-website
+      dockerfile: Dockerfile
+    container_name: dance-studio-website
+    restart: unless-stopped
+    ports:
+      - "3001:80"
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+  # MySQL (Database)
+  db:
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: testdb
+      MYSQL_USER: user
+      MYSQL_PASSWORD: userpass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/init.sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./mysql/update_teachers_table.sql:/docker-entrypoint-initdb.d/02-update_teachers_table.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "user", "-puserpass"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+

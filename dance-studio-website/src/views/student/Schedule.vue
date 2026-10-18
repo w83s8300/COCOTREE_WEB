@@ -1,22 +1,16 @@
 <template>
   <div class="schedule-page">
     <!-- 1. Banner -->
-    <div class="banner">
-      <img src="https://picsum.photos/1920/500?random=36" alt="Schedule Banner" class="banner-img">
-      <div class="banner-text">
-        <h1>課程時間表 / SCHEDULE</h1>
-      </div>
-    </div>
+    <PageBanner image="https://picsum.photos/1920/500?random=36" title="課程時間表 / SCHEDULE" />
 
     <!-- 2. Class Schedule with Filters -->
     <div class="container my-5">
-      <h2 class="text-center mb-4">完整課程時間表</h2>
+      <h2 class="text-center mb-4 fw-bold">完整課程時間表</h2>
 
       <!-- 週選擇器 -->
       <div class="d-flex flex-wrap align-items-center justify-content-center mb-4">
-        <!-- label + input 包在一起 -->
         <div class="d-flex align-items-center mb-2 mb-md-0">
-          <label class="form-label me-2 mb-0">選擇日期：</label>
+          <label class="form-label me-2 mb-0 fw-bold">選擇日期：</label>
           <input 
             type="date" 
             v-model="selectedWeekStart" 
@@ -25,9 +19,7 @@
             title="選擇任意日期，系統會顯示該日期所在週的課程表"
           />
         </div>
-
-        <!-- span 分開一列 -->
-        <span class="mx-2 text-muted text-center">
+        <span class="mx-2 text-muted text-center fw-medium">
           週期：{{ formatDateRange(weekStartDate, weekEndDate) }}
         </span>
       </div>
@@ -39,47 +31,53 @@
           :key="type"
           @click="selectedDanceType = type"
           :class="{ 'active': selectedDanceType === type }"
-          class="btn btn-outline-light m-2"
+          class="btn btn-outline-dark m-1"
         >
           {{ type }}
         </button>
       </div>
 
-      <!-- Desktop Table View -->
-      <div class="table-responsive d-none d-lg-block">
-        <table class="table table-bordered table-Secondary table-striped text-center schedule-table">
-          <thead>
+      <!-- 載入中狀態 -->
+      <div v-if="loading" class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">載入中...</span>
+        </div>
+        <p class="mt-2 text-muted">正在載入每週課表...</p>
+      </div>
+
+      <!-- Desktop Table View (O(1) 矩陣快速查詢) -->
+      <div v-else class="table-responsive d-none d-lg-block">
+        <table class="table table-bordered table-striped text-center schedule-table align-middle">
+          <thead class="table-dark">
             <tr>
-              <th>時間</th>
-              <th v-for="(day, index) in daysOfWeek" :key="index">
+              <th scope="col" style="width: 120px;">時間</th>
+              <th scope="col" v-for="(day, index) in daysOfWeek" :key="index">
                 {{ day }}<br/>
-                <small>{{ getDateForDay(index) }}</small>
+                <small class="text-light-50">{{ getDateForDay(index) }}</small>
               </th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="(timeSlot, timeIndex) in timeSlots" :key="timeIndex">
-              <td>{{ timeSlot }}</td>
+              <td class="time-slot">{{ timeSlot }}</td>
               <td v-for="(day, dayIndex) in daysOfWeek" :key="dayIndex">
                 <div
-                  v-for="(lesson, lessonIndex) in getFilteredLessons(timeSlot, day)"
-                  :key="lessonIndex"
+                  v-for="lesson in (scheduleMatrix[`${timeSlot}|${day}`] || [])"
+                  :key="lesson.schedule_id"
                   :class="getLessonClass(lesson.type)"
-                  class="lesson-cell"
+                  class="schedule-cell cursor-pointer"
                   @click="openModal(lesson)"
-                  style="cursor: pointer"
                 >
-                  <p class="lesson-name">{{ lesson.name }}</p>
-                  <p class="lesson-teacher">{{ lesson.teacher }}</p>
-                  <p class="lesson-level">{{ lesson.level }}</p>
-                  <div class="enrollment-info">
-                    <small class="text-muted">{{ lesson.enrollment_count }}/{{ lesson.course_capacity }}人</small>
-                  </div>
-                  <div class="enrollment-status">
+                  <p class="lesson-name fw-bold mb-1">{{ lesson.name }}</p>
+                  <p class="lesson-teacher small mb-1">{{ lesson.teacher }} | {{ lesson.level }}</p>
+                  <div class="enrollment-status mb-1">
                     <span v-if="lesson.allow_enrollment && !lesson.is_full" class="badge bg-success">可報名</span>
-                    <span v-else-if="lesson.is_full" class="badge bg-warning">已滿額</span>
-                    <span v-else class="badge bg-secondary">不開放報名</span>
+                    <span v-else-if="lesson.is_full" class="badge bg-warning text-dark">已滿額</span>
+                    <span v-else class="badge bg-secondary">不開放</span>
                   </div>
+                  <small class="text-white-50 d-block">
+                    {{ lesson.enrollment_count }}/{{ lesson.course_capacity }} 人
+                  </small>
                 </div>
               </td>
             </tr>
@@ -88,31 +86,25 @@
       </div>
 
       <!-- Mobile Card View -->
-      <div class="d-lg-none">
+      <div v-if="!loading" class="d-lg-none">
         <template v-for="(day, dayIndex) in daysOfWeek" :key="dayIndex">
           <div v-if="getLessonsForDay(day).length > 0" class="mb-4">
-            <h3 class="text-center">{{ day }} {{ getDateForDay(dayIndex) }}</h3>
-            <div 
-              v-for="(lesson, lessonIndex) in getLessonsForDay(day)" 
-              :key="lessonIndex" 
-              :class="getLessonClass(lesson.type)" 
-              class="lesson-card-mobile"
+            <h4 class="text-center py-2 bg-light border rounded">{{ day }} ({{ getDateForDay(dayIndex) }})</h4>
+            <div
+              v-for="lesson in getLessonsForDay(day)"
+              :key="lesson.schedule_id"
+              :class="getLessonClass(lesson.type)"
+              class="schedule-card-mobile p-3 mb-2 rounded text-white cursor-pointer shadow-sm"
               @click="openModal(lesson)"
-              style="cursor: pointer"
             >
-              <div class="lesson-card-mobile-time">{{ lesson.time }}</div>
-              <div class="lesson-card-mobile-details">
-                <p class="lesson-name">{{ lesson.name }}</p>
-                <p class="lesson-teacher">{{ lesson.teacher }}</p>
-                <p class="lesson-level">{{ lesson.level }}</p>
-                <div class="enrollment-info">
-                  <small class="text-muted">報名人數：{{ lesson.enrollment_count }}/{{ lesson.course_capacity }}人</small>
-                </div>
-                <div class="enrollment-status">
-                  <span v-if="lesson.allow_enrollment && !lesson.is_full" class="badge bg-success">可報名</span>
-                  <span v-else-if="lesson.is_full" class="badge bg-warning">已滿額</span>
-                  <span v-else class="badge bg-secondary">不開放報名</span>
-                </div>
+              <div class="fw-bold mb-1">{{ lesson.time }}</div>
+              <h5 class="fw-bold mb-1">{{ lesson.name }}</h5>
+              <p class="mb-1 small">授課：{{ lesson.teacher }} | 程度：{{ lesson.level }}</p>
+              <div class="d-flex justify-content-between align-items-center mt-2">
+                <span v-if="lesson.allow_enrollment && !lesson.is_full" class="badge bg-success">可報名</span>
+                <span v-else-if="lesson.is_full" class="badge bg-warning text-dark">已滿額</span>
+                <span v-else class="badge bg-secondary">不開放</span>
+                <small>{{ lesson.enrollment_count }}/{{ lesson.course_capacity }} 人</small>
               </div>
             </div>
           </div>
@@ -120,52 +112,36 @@
       </div>
     </div>
 
-    <!-- Lesson Details Modal -->
-    <div v-if="showModal" class="modal-overlay" @click="closeModal">
-      <div class="modal-content" @click.stop>
-        <div class="modal-header">
-          <h4 class="modal-title">課程詳情</h4>
-          <button type="button" class="btn-close" @click="closeModal">&times;</button>
-        </div>
-        <div class="modal-body" v-if="selectedLesson">
-          <div class="lesson-detail-card" >
-            <h5 class="lesson-name-large">{{ selectedLesson.name }}</h5>
-            <div class="lesson-info">
-              <div class="info-item">
-                <strong>時間：</strong>{{ selectedLesson.time }}
-              </div>
-              <div class="info-item">
-                <strong>星期：</strong>{{ selectedLesson.day }}
-              </div>
-              <div class="info-item">
-                <strong>教師：</strong>{{ selectedLesson.teacher }}
-              </div>
-              <div class="info-item">
-                <strong>程度：</strong>{{ selectedLesson.level }}
-              </div>
-              <div class="info-item">
-                <strong>舞蹈類型：</strong>{{ selectedLesson.type }}
-              </div>
-              <div class="info-item">
-                <strong>報名人數：</strong>{{ selectedLesson.enrollment_count }}/{{ selectedLesson.course_capacity }}人
-              </div>
-              <div class="info-item">
-                <strong>報名狀態：</strong>
-                <span v-if="selectedLesson.allow_enrollment && !selectedLesson.is_full" class="badge bg-success">可報名</span>
-                <span v-else-if="selectedLesson.is_full" class="badge bg-warning">已滿額</span>
-                <span v-else class="badge bg-secondary">不開放報名</span>
-              </div>
+    <!-- Lesson Detail & Enrollment Modal -->
+    <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
+      <div class="modal d-block" tabindex="-1" role="dialog">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title fw-bold">{{ selectedLesson?.name }}</h5>
+              <button type="button" class="btn-close" @click="closeModal" aria-label="Close"></button>
             </div>
-            <!-- <div class="lesson-description">
-              <h6>課程介紹</h6>
-              <p>{{ getLessonDescription(selectedLesson.type) }}</p>
-            </div> -->
-            <div class="enrollment-form">
-              <h6>報名資訊</h6>
-              <div v-if="selectedLesson.allow_enrollment && !selectedLesson.is_full">
-                <div class="form-group row">
-                  <label for="studentName" class="col-2 col-form-label">姓名：</label>
-                  <div class="col-10">
+            <div class="modal-body text-start" v-if="selectedLesson">
+              <div class="mb-3">
+                <p class="mb-1"><strong>上課時間：</strong>{{ selectedLesson.time }} ({{ selectedLesson.day }})</p>
+                <p class="mb-1"><strong>授課老師：</strong>{{ selectedLesson.teacher || '未指定' }}</p>
+                <p class="mb-1"><strong>課程難度：</strong>{{ selectedLesson.level }}</p>
+                <p class="mb-1"><strong>舞風類型：</strong>{{ selectedLesson.type }}</p>
+                <p class="mb-1"><strong>報名人數：</strong>{{ selectedLesson.enrollment_count }}/{{ selectedLesson.course_capacity }} 人</p>
+                <p class="mb-0"><strong>扣除堂數：</strong>{{ selectedLesson.course_price }} 堂</p>
+              </div>
+
+              <div class="p-3 bg-light rounded mb-3">
+                <h6 class="fw-bold mb-2">舞風介紹</h6>
+                <p class="mb-0 small text-muted">{{ getLessonDescription(selectedLesson.type) }}</p>
+              </div>
+
+              <!-- 報名表單 -->
+              <div class="enrollment-section">
+                <h6 class="fw-bold mb-2">預約報名</h6>
+                <div v-if="selectedLesson.allow_enrollment && !selectedLesson.is_full">
+                  <div class="mb-3">
+                    <label for="studentName" class="form-label small">學員姓名：</label>
                     <input 
                       type="text" 
                       id="studentName" 
@@ -173,37 +149,29 @@
                       class="form-control" 
                       placeholder="請輸入您的姓名"
                       @keyup.enter="enrollLesson(selectedLesson)"
+                      :disabled="enrolling"
                     />
                   </div>
                 </div>
-              </div>
-              <div v-else-if="selectedLesson.is_full" class="alert alert-danger">
-                <i class="fas fa-exclamation-triangle"></i>
-                此課程報名人數已滿，無法報名。
-              </div>
-              <div v-else class="alert alert-warning">
-                <i class="fas fa-exclamation-triangle"></i>
-                此課程目前不開放報名。
+                <div v-else-if="selectedLesson.is_full" class="alert alert-warning py-2 small mb-0">
+                  <i class="bi bi-exclamation-triangle me-1"></i>此時段報名人數已額滿，無法預約。
+                </div>
+                <div v-else class="alert alert-secondary py-2 small mb-0">
+                  <i class="bi bi-info-circle me-1"></i>此課程時段目前未開放線上預約。
+                </div>
               </div>
             </div>
-            <div class="lesson-actions">
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" @click="closeModal">關閉</button>
               <button 
-                v-if="selectedLesson.allow_enrollment && !selectedLesson.is_full"
-                class="btn btn-primary me-2" 
-                @click="enrollLesson(selectedLesson)">
-                立即報名
-              </button>
-              <button 
-                v-else-if="selectedLesson.is_full"
-                class="btn btn-warning me-2" 
-                disabled>
-                已滿額
-              </button>
-              <button 
-                v-else
-                class="btn btn-secondary me-2" 
-                disabled>
-                不開放報名
+                v-if="selectedLesson?.allow_enrollment && !selectedLesson?.is_full"
+                type="button" 
+                class="btn btn-primary" 
+                @click="enrollLesson(selectedLesson)"
+                :disabled="enrolling"
+              >
+                <span v-if="enrolling" class="spinner-border spinner-border-sm me-1" role="status"></span>
+                {{ enrolling ? '報名中...' : '確認報名' }}
               </button>
             </div>
           </div>
@@ -214,16 +182,23 @@
 </template>
 
 <script>
-import { API_BASE_URL, API_ENDPOINTS } from '@/utils/api.js';
+import api, { API_ENDPOINTS } from '@/utils/api';
+import PageBanner from '@/components/PageBanner.vue';
+import { showToast } from '@/utils/toast';
 
 export default {
   name: 'Schedule',
+  components: {
+    PageBanner
+  },
   data() {
     return {
       showModal: false,
       selectedLesson: null,
       studentName: '',
-      danceTypes: [], // 從後端取得
+      loading: false,
+      enrolling: false,
+      danceTypes: ['全部'],
       selectedDanceType: '全部',
       timeSlots: [
         '09:00 - 10:00', '10:00 - 11:00', '11:00 - 12:00',
@@ -231,12 +206,27 @@ export default {
         '19:00 - 20:00', '20:00 - 21:00', '21:00 - 22:00'
       ],
       daysOfWeek: ['週一', '週二', '週三', '週四', '週五', '週六', '週日'],
-      classes: [], // 從後端取得
+      classes: [],
       selectedWeekStart: '',
       weekStartDate: null,
       weekEndDate: null,
-      weekDates: [] // 儲存該週的七天日期
+      weekDates: []
     };
+  },
+  computed: {
+    scheduleMatrix() {
+      const matrix = {};
+      const filtered = this.classes.filter(lesson => {
+        return this.selectedDanceType === '全部' || lesson.type === this.selectedDanceType;
+      });
+
+      filtered.forEach(lesson => {
+        const key = `${lesson.time}|${lesson.day}`;
+        if (!matrix[key]) matrix[key] = [];
+        matrix[key].push(lesson);
+      });
+      return matrix;
+    }
   },
   mounted() {
     this.initializeCurrentWeek();
@@ -246,31 +236,24 @@ export default {
   methods: {
     async fetchDanceTypes() {
       try {
-        const response = await fetch(API_ENDPOINTS.STYLES);
-        const result = await response.json();
-        if (response.ok && result.success) {
-          this.danceTypes = ['全部', ...result.styles.map(s => s.name)];
-        } else {
-          this.danceTypes = ['全部'];
+        const data = await api.get(API_ENDPOINTS.STYLES);
+        if (data.success && data.styles) {
+          this.danceTypes = ['全部', ...data.styles.map(s => s.name)];
         }
       } catch (error) {
         this.danceTypes = ['全部'];
       }
     },
     async fetchSchedule() {
-      if (!this.weekStartDate || !this.weekEndDate) {
-        return;
-      }
-      
-      // 格式化日期為 YYYY-MM-DD
+      if (!this.weekStartDate || !this.weekEndDate) return;
+      this.loading = true;
+
       const start_date = this.formatDateForAPI(this.weekStartDate);
       const end_date = this.formatDateForAPI(this.weekEndDate);
-      
+
       try {
-        const response = await fetch(`${API_ENDPOINTS.SCHEDULES}?start_date=${start_date}&end_date=${end_date}`);
-        const result = await response.json();
-        if (response.ok && result.success) {
-          // 動態生成時間段並轉換後端資料格式
+        const result = await api.get(`${API_ENDPOINTS.SCHEDULES}?start_date=${start_date}&end_date=${end_date}`);
+        if (result.success && result.schedules) {
           this.generateTimeSlots(result.schedules);
           this.classes = result.schedules.map(s => ({
             time: this.findMatchingTimeSlot(s.start_time, s.end_time),
@@ -280,71 +263,61 @@ export default {
             name: s.course_name,
             teacher: s.teacher_name || '',
             level: s.level,
-            type: s.style_name || '未知類型', // 使用正確的欄位名稱 style_name
-            allow_enrollment: !!s.dynamic_allow_enrollment, // 使用動態報名狀態
-            schedule_id: s.id, // 新增課程時間表 ID
-            course_price: s.course_price || 1, // 新增課程扣堂數，預設為1
-            enrollment_count: s.enrollment_count || 0, // 新增報名人數
-            course_capacity: s.course_capacity || 15, // 使用課程容量
-            is_full: s.enrollment_count >= s.course_capacity // 使用課程容量判斷是否已滿
+            type: s.style_name || '未知舞風',
+            allow_enrollment: !!s.dynamic_allow_enrollment,
+            schedule_id: s.id,
+            course_price: s.course_price || 1,
+            enrollment_count: s.enrollment_count || 0,
+            course_capacity: s.course_capacity || 15,
+            is_full: (s.enrollment_count || 0) >= (s.course_capacity || 15)
           }));
-          
         } else {
           this.classes = [];
         }
       } catch (error) {
         this.classes = [];
+      } finally {
+        this.loading = false;
       }
     },
     getDayText(dayOfWeek) {
-      // 英文轉中文
       const map = {
-        'Monday': '週一', 'Tuesday': '週二', 'Wednesday': '週三', 'Thursday': '週四', 'Friday': '週五', 'Saturday': '週六', 'Sunday': '週日'
+        'Monday': '週一', 'Tuesday': '週二', 'Wednesday': '週三', 'Thursday': '週四',
+        'Friday': '週五', 'Saturday': '週六', 'Sunday': '週日'
       };
       return map[dayOfWeek] || dayOfWeek;
     },
     initializeCurrentWeek() {
-      // 設定為當前週的週一
       const today = new Date();
-      const currentDay = today.getDay(); // 0是週日，1是週一
-      const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay; // 計算到週一的偏移
+      const currentDay = today.getDay();
+      const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay;
       const monday = new Date(today);
       monday.setDate(today.getDate() + mondayOffset);
-      
+
       this.selectedWeekStart = this.formatDateForInput(monday);
       this.calculateWeekDates();
     },
     calculateWeekDates() {
       if (!this.selectedWeekStart) return;
-      
       const selectedDate = new Date(this.selectedWeekStart);
-      
-      // 計算該日期所在週的週一
-      const currentDay = selectedDate.getDay(); // 0是週日，1是週一，2是週二...
-      const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay; // 計算到週一的偏移
+      const currentDay = selectedDate.getDay();
+      const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay;
       const monday = new Date(selectedDate);
       monday.setDate(selectedDate.getDate() + mondayOffset);
-      
-      // 設定週一為週開始日期
+
       this.weekStartDate = new Date(monday);
-      
-      // 計算週日（週一 + 6天）
       this.weekEndDate = new Date(monday);
       this.weekEndDate.setDate(monday.getDate() + 6);
-      
-      // 計算該週的七天日期（從週一開始）
+
       this.weekDates = [];
       for (let i = 0; i < 7; i++) {
         const date = new Date(monday);
         date.setDate(monday.getDate() + i);
         this.weekDates.push(date);
       }
-      
-      // 更新日期選擇器顯示週一的日期
       this.selectedWeekStart = this.formatDateForInput(monday);
     },
     onWeekChange() {
-      // 當週日期改變時，先計算週日期，然後自動獲取課程表
       this.calculateWeekDates();
       this.fetchSchedule();
     },
@@ -371,60 +344,31 @@ export default {
       const day = String(date.getDate()).padStart(2, '0');
       return `${year}-${month}-${day}`;
     },
-    generateTimeSlots(schedules) {
-      // 從API資料中收集所有不重複的時間段
-      const timeSlotSet = new Set();
-      
-      schedules.forEach(schedule => {
-        const startTime = this.formatTime(schedule.start_time);
-        const endTime = this.formatTime(schedule.end_time);
-        const timeSlot = `${startTime} - ${endTime}`;
-        timeSlotSet.add(timeSlot);
-      });
-      
-      // 將時間段轉換為陣列並排序
-      const newTimeSlots = Array.from(timeSlotSet).sort((a, b) => {
-        const timeA = a.split(' - ')[0];
-        const timeB = b.split(' - ')[0];
-        return timeA.localeCompare(timeB);
-      });
-      
-      // 如果有新的時間段，更新 timeSlots
-      if (newTimeSlots.length > 0) {
-        this.timeSlots = newTimeSlots;
-      }
-    },
     formatTime(timeString) {
-      // 將 "14:50:00" 格式轉換為 "14:50"
       if (timeString && timeString.includes(':')) {
         const parts = timeString.split(':');
         return `${parts[0]}:${parts[1]}`;
       }
-      return timeString;
+      return timeString || '';
+    },
+    generateTimeSlots(schedules) {
+      const timeSlotSet = new Set(this.timeSlots);
+      schedules.forEach(schedule => {
+        const startTime = this.formatTime(schedule.start_time);
+        const endTime = this.formatTime(schedule.end_time);
+        if (startTime && endTime) {
+          timeSlotSet.add(`${startTime} - ${endTime}`);
+        }
+      });
+      this.timeSlots = Array.from(timeSlotSet).sort((a, b) => {
+        return a.split(' - ')[0].localeCompare(b.split(' - ')[0]);
+      });
     },
     findMatchingTimeSlot(startTime, endTime) {
-      // 格式化時間
       const formattedStart = this.formatTime(startTime);
       const formattedEnd = this.formatTime(endTime);
       const targetTimeSlot = `${formattedStart} - ${formattedEnd}`;
-      
-      // 在現有的 timeSlots 中尋找匹配的時間段
-      const matchingSlot = this.timeSlots.find(slot => slot === targetTimeSlot);
-      
-      if (matchingSlot) {
-        return matchingSlot;
-      }
-      
-      // 如果找不到完全匹配的，返回格式化後的時間段
-      return targetTimeSlot;
-    },
-    getFilteredLessons(time, day) {
-      return this.classes.filter(lesson => {
-        const matchesTime = lesson.time === time;
-        const matchesDay = lesson.day === day;
-        const matchesType = this.selectedDanceType === '全部' || lesson.type === this.selectedDanceType;
-        return matchesTime && matchesDay && matchesType;
-      });
+      return this.timeSlots.find(slot => slot === targetTimeSlot) || targetTimeSlot;
     },
     getLessonsForDay(day) {
       return this.classes
@@ -432,7 +376,6 @@ export default {
         .sort((a, b) => a.time.localeCompare(b.time));
     },
     getLessonClass(type) {
-      // Map dance types to CSS classes for background colors
       const classMap = {
         'Hip Hop': 'bg-hiphop',
         'Jazz': 'bg-jazz',
@@ -444,111 +387,142 @@ export default {
         'Heels': 'bg-heels',
         'Contemporary': 'bg-contemporary',
         'Vogue': 'bg-vogue',
-        'Street Jazz': 'bg-jazz' // Street Jazz uses Jazz color
+        'Street Jazz': 'bg-jazz'
       };
-      return classMap[type] || '';
+      return classMap[type] || 'bg-secondary';
     },
     openModal(lesson) {
       this.selectedLesson = lesson;
       this.showModal = true;
-      // 防止背景滾動
-      document.body.style.overflow = 'hidden';
     },
     closeModal() {
       this.showModal = false;
       this.selectedLesson = null;
-      this.studentName = ''; // 清空輸入的名字
-      // 恢復背景滾動
-      document.body.style.overflow = 'auto';
+      this.studentName = '';
     },
     getLessonDescription(type) {
       const descriptions = {
-        'Hip Hop': 'Hip Hop是一種源自美國的街舞文化，強調個人風格和自由表達，結合了力量、節奏感和創意。',
-        'Jazz': 'Jazz舞蹈充滿活力和表現力，結合了古典技巧與現代元素，強調身體的延展性和音樂性。',
-        'K-POP': 'K-POP舞蹈融合了多種舞蹈風格，動作精準、整齊劃一，充滿活力和時尚感。',
-        'Locking': 'Locking是一種節奏感強烈的街舞，以突然的停頓和鎖定動作為特色，充滿幽默感。',
-        'Waacking': 'Waacking強調手臂的快速揮舞和優雅的身體線條，展現個人魅力和表演性。',
-        'Breaking': 'Breaking包含了power moves、toprock、downrock等元素，是街舞文化的重要組成部分。',
-        'Popping': 'Popping通過肌肉的收縮和放鬆創造機械式的動作效果，強調身體的控制力。',
-        'Heels': 'Heels舞蹈穿著高跟鞋表演，強調女性魅力、優雅和自信的表達。',
-        'Contemporary': 'Contemporary現代舞結合了芭蕾、現代舞和爵士舞的技巧，注重情感表達和創意。',
-        'Vogue': 'Vogue起源於紐約舞廳文化，以時尚雜誌的pose和優雅的手部動作為特色。'
+        'Hip Hop': 'Hip Hop 是一種源自美國的街舞文化，強調個人風格和自由律動表達，結合了節奏感與創意。',
+        'Jazz': 'Jazz 充滿活力和舞台表現力，結合古典芭蕾技巧與現代律動元素，強調身體的延展性與音樂性。',
+        'K-POP': 'K-POP 融合多種現代街舞風格，動作精準、整齊劃一，充滿流行時尚魅力。',
+        'Locking': 'Locking 節奏感強烈，以急速的停頓與鎖定動作為特色，充滿幽默感與歡樂氛圍。',
+        'Waacking': 'Waacking 強調手臂的快速揮舞和優雅的身體線條，展現個人魅力與強烈音樂性。',
+        'Breaking': 'Breaking 包含大地板與各類力量技巧展示，是街舞文化最經典熱血的象徵。',
+        'Popping': 'Popping 透過肌肉的收縮與放鬆創造出震撼的爆點節奏，強調身體極致的控制力。',
+        'Heels': 'Heels 穿著高跟鞋練習，強調女性魅力、身型優雅曲線與極致自信展現。',
+        'Contemporary': 'Contemporary 結合芭蕾、現代舞與爵士技巧，注重細膩情感傳遞與身體對話。',
+        'Vogue': 'Vogue 起源於紐約舞廳文化，以時尚雜誌的經典 pose 與流暢手部幾何線條著稱。'
       };
-      return descriptions[type] || '這是一個精彩的舞蹈課程，歡迎您來體驗！';
+      return descriptions[type] || '這是一個精彩的舞蹈課程，歡迎您前來體驗感受！';
     },
     async enrollLesson(lesson) {
-      // 檢查是否允許報名
       if (!lesson.allow_enrollment) {
-        alert('很抱歉，此課程目前不開放報名！');
+        showToast('很抱歉，此課程目前不開放線上預約！', 'warning');
         return;
       }
-
-      // 檢查是否已滿額
       if (lesson.is_full) {
-        alert('很抱歉，此課程報名人數已滿！');
+        showToast('很抱歉，此課程報名人數已額滿！', 'warning');
         return;
       }
-
-      // 檢查是否有輸入名字
       if (!this.studentName.trim()) {
-        alert('請輸入您的姓名！');
+        showToast('請輸入您的姓名！', 'warning');
         return;
       }
 
+      this.enrolling = true;
       try {
-        // 準備要發送的資料
-        const enrollmentData = {
-          studentName: this.studentName,
-          lesson: lesson,
-          schedule_id: lesson.schedule_id // 新增課程時間表 ID
+        const payload = {
+          student_name: this.studentName.trim(),
+          schedule_id: lesson.schedule_id
         };
-
-        console.log('=== 發送報名資料到後端 ===');
-        console.log('報名資料:', enrollmentData);
-
-        // 發送 POST 請求到後端 (使用動態 API 配置)
-        const response = await fetch(`${API_BASE_URL}/enrollment`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(enrollmentData)
-        });
-
-        const result = await response.json();
-
-        if (response.ok && result.success) {
-          console.log('=== 後端回應成功 ===');
-          console.log('報名編號:', result.enrollment.id);
-          console.log('剩餘堂數:', result.enrollment.remainingClasses);
-          console.log('完整回應:', result);
-          console.log('==================');
-          
-          // 顯示報名成功訊息（包含剩餘堂數）
-          const remainingClasses = result.enrollment.remainingClasses;
-          const coursePrice = lesson.course_price || 1; // 課程扣堂數
-          alert(`${this.studentName} 您好！\n您已成功報名 ${lesson.name} 課程！\n\n報名詳情：\n• 報名編號：${result.enrollment.id}\n• 時間：${lesson.day} ${lesson.time}\n• 老師：${lesson.teacher}\n• 扣除堂數：${coursePrice}堂\n• 剩餘堂數：${remainingClasses}堂\n\n報名資料已儲存至資料庫！`);
-          
-          // 報名成功後關閉 Modal
+        const result = await api.post(API_ENDPOINTS.ENROLLMENTS, payload);
+        if (result.success) {
+          showToast('預約報名成功！期待在課堂上遇見您。', 'success');
           this.closeModal();
-          
-          // 自動獲取課程表
           this.fetchSchedule();
         } else {
-          console.error('報名失敗:', result);
-          // 顯示後端回傳的具體錯誤訊息
-          alert(`報名失敗：${result.error || result.message || '未知錯誤'}`);
+          showToast(`報名失敗：${result.error || '請稍後重試'}`, 'error');
         }
-
       } catch (error) {
-        console.error('=== 報名請求錯誤 ===');
-        console.error('錯誤詳情:', error);
-        console.log('==================');
-        alert('網路錯誤，請檢查後端服務是否正常運行，或稍後再試！\n\n提示：請確保 Docker 容器正在運行。');
+        console.error('報名失敗:', error);
+        showToast('預約報名失敗，請稍後重試！', 'error');
+      } finally {
+        this.enrolling = false;
       }
     }
   }
 };
 </script>
 
-<style src="../../assets/css/Schedule.css"></style>
+<style scoped>
+.schedule-table {
+  background-color: #ffffff;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.schedule-table th {
+  padding: 12px 6px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.schedule-table td {
+  vertical-align: top;
+  padding: 4px;
+  min-height: 80px;
+}
+
+.time-slot {
+  background-color: #f8f9fa;
+  font-weight: 600;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  min-width: 50px;
+  vertical-align: middle !important;
+}
+
+.schedule-cell {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 6px;
+  padding: 8px;
+  margin-bottom: 4px;
+  transition: all 0.2s ease;
+}
+
+.schedule-cell:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+}
+
+.cursor-pointer {
+  cursor: pointer;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 1055;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 舞風色彩標籤 */
+.bg-hiphop { background: linear-gradient(135deg, #ff6b6b 0%, #c0392b 100%) !important; }
+.bg-jazz { background: linear-gradient(135deg, #f39c12 0%, #d35400 100%) !important; }
+.bg-kpop { background: linear-gradient(135deg, #e84393 0%, #fd79a8 100%) !important; }
+.bg-locking { background: linear-gradient(135deg, #00b894 0%, #00cec9 100%) !important; }
+.bg-waacking { background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%) !important; }
+.bg-breaking { background: linear-gradient(135deg, #2d3436 0%, #636e72 100%) !important; }
+.bg-popping { background: linear-gradient(135deg, #0984e3 0%, #74b9ff 100%) !important; }
+.bg-heels { background: linear-gradient(135deg, #d63031 0%, #e17055 100%) !important; }
+.bg-contemporary { background: linear-gradient(135deg, #00cec9 0%, #81ecec 100%) !important; }
+.bg-vogue { background: linear-gradient(135deg, #fd79a8 0%, #fab1a0 100%) !important; }
+</style>

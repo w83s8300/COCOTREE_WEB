@@ -22,7 +22,7 @@ DB_CONFIG = {
 
 def get_db_connection():
     """取得資料庫連接，包含重試機制"""
-    max_retries = 5
+    max_retries = 15
     retry_delay = 2
     
     for attempt in range(max_retries):

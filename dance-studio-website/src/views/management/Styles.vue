@@ -1,39 +1,69 @@
 <template>
   <div class="styles">
     <div class="d-flex justify-content-between align-items-center mb-3">
-      <h2>風格管理</h2>
-      <button @click="addNewStyle" class="btn btn-success">新增風格</button>
+      <h2>舞風管理</h2>
+      <button @click="openCreate" class="btn btn-success">
+        <i class="bi bi-plus-lg me-1"></i>新增舞風
+      </button>
     </div>
-    <table class="style-table">
-      <thead>
-        <tr>
-          <th>名稱</th>
-          <th>描述</th>
-          <th>操作</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="style in styles" :key="style.id">
-          <td>{{ style.name }}</td>
-          <td>{{ style.description }}</td>
-          <td>
-            <button @click="editStyle(style.id)" class="btn btn-primary btn-sm">編輯</button>
-            <button @click="deleteStyle(style.id)" class="btn btn-danger btn-sm">移除</button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+
+    <!-- 載入中狀態 -->
+    <div v-if="loading" class="text-center py-5">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">載入中...</span>
+      </div>
+      <p class="mt-2 text-muted">正在載入舞風資料...</p>
+    </div>
+
+    <!-- 錯誤狀態 -->
+    <div v-else-if="error" class="alert alert-danger d-flex justify-content-between align-items-center" role="alert">
+      <span>{{ error }}</span>
+      <button @click="fetchStyles" class="btn btn-outline-danger btn-sm">重新嘗試</button>
+    </div>
+
+    <!-- 空資料狀態 -->
+    <div v-else-if="styles.length === 0" class="text-center py-5 text-muted">
+      <p>目前尚無舞風資料，請點擊上方按鈕新增。</p>
+    </div>
+
+    <!-- 表格內容 -->
+    <div v-else class="table-responsive">
+      <table class="table table-hover table-bordered align-middle">
+        <thead class="table-light">
+          <tr>
+            <th scope="col" style="width: 250px;">名稱</th>
+            <th scope="col">描述</th>
+            <th scope="col" class="text-center" style="width: 150px;">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="style in styles" :key="style.id">
+            <td class="fw-bold">{{ style.name }}</td>
+            <td>{{ style.description || '暫無描述' }}</td>
+            <td class="text-center">
+              <button @click="openEdit(style.id)" class="btn btn-primary btn-sm me-1">編輯</button>
+              <button @click="deleteStyle(style.id)" class="btn btn-danger btn-sm">刪除</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
     <!-- Bootstrap Modal for adding/editing style -->
     <div class="modal fade" id="editStyleModal" tabindex="-1" aria-labelledby="editStyleModalLabel" aria-hidden="true">
       <div class="modal-dialog modal-lg">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title" id="editStyleModalLabel">{{ editingStyleId ? '編輯風格' : '新增風格' }}</h5>
+            <h5 class="modal-title" id="editStyleModalLabel">{{ editingId ? '編輯風格' : '新增風格' }}</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
-            <AddStyle v-if="showEditModal" :styleId="editingStyleId" @style-updated="handleStyleUpdated" @close-modal="closeEditModal" />
+            <AddStyle
+              v-if="showForm"
+              :styleId="editingId"
+              @style-updated="handleStyleUpdated"
+              @close-modal="closeModal"
+            />
           </div>
         </div>
       </div>
@@ -42,74 +72,64 @@
 </template>
 
 <script>
-import apiService from '@/utils/api';
-import AddStyle from '../forms/AddStyle.vue'; // 引入 AddStyle 組件
-import { Modal } from 'bootstrap'; // 引入 Bootstrap Modal JS
+import api, { API_ENDPOINTS } from '@/utils/api';
+import AddStyle from '../forms/AddStyle.vue';
+import { useCrudModal } from '@/composables/useCrudModal';
+import { showToast } from '@/utils/toast';
+import { showConfirm } from '@/utils/dialog';
 
 export default {
+  name: 'Styles',
   components: {
     AddStyle
+  },
+  setup() {
+    const { showForm, editingId, initModal, openCreate, openEdit, closeModal } = useCrudModal('editStyleModal');
+    return { showForm, editingId, initModal, openCreate, openEdit, closeModal };
   },
   data() {
     return {
       styles: [],
-      showEditModal: false, // 控制 AddStyle 組件的渲染
-      editingStyleId: null,
-      editModal: null // 用於儲存 Bootstrap Modal 實例
+      loading: false,
+      error: null
     };
   },
   mounted() {
-    // 在組件掛載後初始化 Bootstrap Modal
-    this.editModal = new Modal(document.getElementById('editStyleModal'));
-    // 監聽 modal 關閉事件，以便重置狀態
-    document.getElementById('editStyleModal').addEventListener('hidden.bs.modal', () => {
-      this.showEditModal = false;
-      this.editingStyleId = null;
-    });
+    this.initModal();
   },
   created() {
     this.fetchStyles();
   },
   methods: {
-    fetchStyles() {
-      apiService.get('styles')
-        .then(response => response.json())
-        .then(data => {
-          this.styles = data.styles;
-        })
-        .catch(error => {
-          console.error('獲取風格列表失敗:', error);
-        });
+    async fetchStyles() {
+      this.loading = true;
+      this.error = null;
+      try {
+        const data = await api.get(API_ENDPOINTS.STYLES);
+        this.styles = data.styles || [];
+      } catch (err) {
+        console.error('獲取舞風列表失敗:', err);
+        this.error = '獲取舞風列表失敗，請稍後再試。';
+      } finally {
+        this.loading = false;
+      }
     },
-    addNewStyle() {
-      this.editingStyleId = null; // 設定為 null 表示新增模式
-      this.showEditModal = true; // 渲染 AddStyle 組件
-      this.editModal.show(); // 顯示 Bootstrap Modal
-    },
-    editStyle(id) {
-      this.editingStyleId = id;
-      this.showEditModal = true; // 渲染 AddStyle 組件
-      this.editModal.show(); // 顯示 Bootstrap Modal
-    },
-    deleteStyle(id) {
-      if (confirm('確定要刪除這個風格嗎？')) {
-        apiService.delete(`styles/${id}`)
-          .then(response => response.json())
-          .then(() => {
-            this.fetchStyles(); // Refresh the list after deletion
-          })
-          .catch(error => {
-            console.error('刪除風格失敗:', error);
-          });
+    async deleteStyle(id) {
+      const confirmed = await showConfirm('確定要刪除這個舞風嗎？此操作可能會影響關聯的課程與老師。');
+      if (!confirmed) return;
+
+      try {
+        await api.delete(`${API_ENDPOINTS.STYLES}/${id}`);
+        showToast('風格已成功刪除！', 'success');
+        this.fetchStyles();
+      } catch (err) {
+        console.error('刪除風格失敗:', err);
+        showToast('刪除風格失敗，請重試。', 'error');
       }
     },
     handleStyleUpdated() {
-      this.fetchStyles(); // 風格數據更新後刷新列表
-      this.editModal.hide(); // 關閉 Bootstrap Modal
-    },
-    closeEditModal() {
-      // 由 AddStyle 組件發出，用於取消或錯誤時關閉 modal
-      this.editModal.hide();
+      this.fetchStyles();
+      this.closeModal();
     }
   }
 };
@@ -117,21 +137,6 @@ export default {
 
 <style scoped>
 .styles {
-  padding: 20px;
-}
-.style-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-.style-table th, .style-table td {
-  border: 1px solid #ccc;
-  padding: 8px;
-  text-align: left;
-}
-.style-table th {
-  background-color: #f2f2f2;
-}
-.style-table button {
-  margin-right: 5px;
+  padding: 10px;
 }
 </style>

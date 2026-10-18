@@ -1,15 +1,10 @@
 <template>
   <div class="about-page">
     <!-- 1. Banner -->
-    <div class="banner">
-      <img src="https://picsum.photos/1920/500?random=9" alt="About Us Banner" class="banner-img">
-      <div class="banner-text">
-        <h1>關於我們 / ABOUT US</h1>
-      </div>
-    </div>
+    <PageBanner image="https://picsum.photos/1920/500?random=9" title="關於我們 / ABOUT US" />
 
     <!-- 2. Introduction -->
-    <div class="container my-5">
+    <div class="container my-5" data-aos="fade-up">
       <div class="row align-items-center">
         <div class="col-lg-6">
           <h2 class="mb-3">歡迎來到 Dance Studio</h2>
@@ -21,19 +16,19 @@
           </p>
         </div>
         <div class="col-lg-6">
-          <img src="https://picsum.photos/800/600?random=10" class="img-fluid rounded" alt="Studio Introduction">
+          <img src="https://picsum.photos/800/600?random=10" class="img-fluid rounded" alt="Studio Introduction" loading="lazy">
         </div>
       </div>
     </div>
 
     <!-- 3. Studio Environment -->
-    <div class="bg-light py-5">
+    <div class="bg-light py-5" data-aos="fade-up">
       <div class="container">
         <h2 class="text-center mb-4">環境介紹</h2>
         <div class="row">
           <div class="col-md-4 mb-4">
             <div class="card h-100">
-              <img src="https://picsum.photos/600/400?random=11" class="card-img-top" alt="Studio A">
+              <img src="https://picsum.photos/600/400?random=11" class="card-img-top" alt="Studio A" loading="lazy">
               <div class="card-body">
                 <h5 class="card-title">A 教室</h5>
                 <p class="card-text">寬敞明亮的空間，適合大型團體課程與排練。</p>
@@ -42,7 +37,7 @@
           </div>
           <div class="col-md-4 mb-4">
             <div class="card h-100">
-              <img src="https://picsum.photos/600/400?random=12" class="card-img-top" alt="Studio B">
+              <img src="https://picsum.photos/600/400?random=12" class="card-img-top" alt="Studio B" loading="lazy">
               <div class="card-body">
                 <h5 class="card-title">B 教室</h5>
                 <p class="card-text">配備專業燈光音響，適合 MV 拍攝與成果發表。</p>
@@ -51,7 +46,7 @@
           </div>
           <div class="col-md-4 mb-4">
             <div class="card h-100">
-              <img src="https://picsum.photos/600/400?random=13" class="card-img-top" alt="Lounge Area">
+              <img src="https://picsum.photos/600/400?random=13" class="card-img-top" alt="Lounge Area" loading="lazy">
               <div class="card-body">
                 <h5 class="card-title">休息區</h5>
                 <p class="card-text">舒適的休憩空間，提供學員課後交流與放鬆。</p>
@@ -66,9 +61,18 @@
 </template>
 
 <script>
+import PageBanner from '@/components/PageBanner.vue';
+
 export default {
-  name: 'About'
+  name: 'About',
+  components: {
+    PageBanner,
+  },
 }
 </script>
 
-<style src="../../assets/css/About.css"></style>
+<style scoped>
+.bg-light {
+  background-color: #f8f9fa !important;
+}
+</style>

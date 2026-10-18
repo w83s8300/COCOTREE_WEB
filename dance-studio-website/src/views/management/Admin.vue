@@ -1,71 +1,100 @@
 <template>
-  <div class="admin-layout">
-    <div class="sidebar">
-      <h2>管理選單</h2>
-      <nav>
-        <ul>
-          <li><router-link to="/admin/students">學生列表</router-link></li>
-          <li><router-link to="/admin/teachers">老師列表</router-link></li>
-          <li><router-link to="/admin/courses">課程列表</router-link></li>
-          <li><router-link to="/admin/schedules">課程時間表</router-link></li>
-          <li><router-link to="/admin/rooms">教室列表</router-link></li>
-          <li><router-link to="/admin/styles">風格</router-link></li>
-        </ul>
-      </nav>
+  <div class="admin-layout container-fluid px-0">
+    <!-- 行動版側邊欄開關按鈕 -->
+    <div class="d-md-none p-3 bg-light border-bottom d-flex justify-content-between align-items-center">
+      <span class="fw-bold">後台管理系統</span>
+      <button class="btn btn-sm btn-outline-dark" @click="isSidebarOpen = !isSidebarOpen">
+        <i class="bi bi-list"></i> 選單
+      </button>
     </div>
-    <div class="main-content">
-      <router-view></router-view>
+
+    <div class="d-flex">
+      <aside class="sidebar bg-light border-end" :class="{ 'd-none d-md-block': !isSidebarOpen }">
+        <div class="p-3">
+          <h5 class="sidebar-title mb-4 text-center fw-bold">管理選單</h5>
+          <nav aria-label="管理選單導航">
+            <ul class="nav nav-pills flex-column mb-auto">
+              <li class="nav-item mb-2" v-for="item in navItems" :key="item.to">
+                <router-link
+                  :to="item.to"
+                  class="nav-link text-dark"
+                  active-class="active text-white"
+                  @click="isSidebarOpen = false"
+                >
+                  <i :class="item.icon" class="me-2"></i>{{ item.label }}
+                </router-link>
+              </li>
+            </ul>
+          </nav>
+        </div>
+      </aside>
+
+      <main class="main-content flex-grow-1 p-4">
+        <router-view></router-view>
+      </main>
     </div>
   </div>
 </template>
 
 <script>
 export default {
-  name: 'Admin'
+  name: 'Admin',
+  data() {
+    return {
+      isSidebarOpen: false,
+      navItems: [
+        { to: '/admin/students', label: '學生管理', icon: 'bi bi-people' },
+        { to: '/admin/teachers', label: '老師管理', icon: 'bi bi-person-badge' },
+        { to: '/admin/courses', label: '課程管理', icon: 'bi bi-journal-bookmark' },
+        { to: '/admin/schedules', label: '課程時間表', icon: 'bi bi-calendar3' },
+        { to: '/admin/rooms', label: '教室管理', icon: 'bi bi-door-open' },
+        { to: '/admin/styles', label: '舞風管理', icon: 'bi bi-music-note-beamed' }
+      ]
+    };
+  }
 };
 </script>
 
 <style scoped>
 .admin-layout {
-  display: flex;
+  min-height: calc(100vh - 70px);
 }
 
 .sidebar {
   width: 250px;
-  background-color: #f4f4f4;
-  padding: 20px;
-  height: 100vh;
+  min-height: calc(100vh - 70px);
+  position: sticky;
+  top: 70px;
 }
 
-.sidebar h2 {
-  text-align: center;
-  margin-bottom: 20px;
+.nav-link {
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  font-weight: 500;
 }
 
-.sidebar nav ul {
-  list-style: none;
-  padding: 0;
+.nav-link:hover:not(.active) {
+  background-color: #e9ecef;
 }
 
-.sidebar nav ul li {
-  margin-bottom: 10px;
-}
-
-.sidebar nav ul li a {
-  text-decoration: none;
-  color: #333;
-  display: block;
-  padding: 10px;
-  border-radius: 4px;
-}
-
-.sidebar nav ul li a:hover,
-.sidebar nav ul li a.router-link-exact-active {
-  background-color: #ddd;
+.nav-link.active {
+  background-color: #0d6efd;
 }
 
 .main-content {
-  flex-grow: 1;
-  padding: 20px;
+  min-width: 0;
+  background-color: #fff;
+}
+
+@media (max-width: 767.98px) {
+  .sidebar {
+    position: fixed;
+    top: 120px;
+    left: 0;
+    z-index: 1040;
+    width: 260px;
+    height: calc(100vh - 120px);
+    box-shadow: 4px 0 10px rgba(0, 0, 0, 0.1);
+  }
 }
 </style>

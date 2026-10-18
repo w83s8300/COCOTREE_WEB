@@ -2,46 +2,80 @@
   <div class="rooms">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h2>教室列表</h2>
-      <button @click="addNewRoom" class="btn btn-success">新增教室</button>
+      <button @click="openCreate" class="btn btn-success">
+        <i class="bi bi-plus-lg me-1"></i>新增教室
+      </button>
     </div>
-    <table class="room-table">
-      <thead>
-        <tr>
-          <th>名稱</th>
-          <th>容量</th>
-          <th>設備</th>
-          <th>描述</th>
-          <th>時租費率</th>
-          <th>狀態</th>
-          <th>操作</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="room in rooms" :key="room.id">
-          <td>{{ room.name }}</td>
-          <td>{{ room.capacity }}</td>
-          <td>{{ room.equipment }}</td>
-          <td>{{ room.description }}</td>
-          <td>{{ room.hourly_rate }}</td>
-          <td>{{ room.is_available ? '可用' : '不可用' }}</td>
-          <td>
-            <button @click="editRoom(room.id)" class="btn btn-primary btn-sm">編輯</button>
-            <button @click="deleteRoom(room.id)" class="btn btn-danger btn-sm">移除</button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+
+    <!-- 載入中狀態 -->
+    <div v-if="loading" class="text-center py-5">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">載入中...</span>
+      </div>
+      <p class="mt-2 text-muted">正在載入教室資料...</p>
+    </div>
+
+    <!-- 錯誤狀態 -->
+    <div v-else-if="error" class="alert alert-danger d-flex justify-content-between align-items-center" role="alert">
+      <span>{{ error }}</span>
+      <button @click="fetchRooms" class="btn btn-outline-danger btn-sm">重新嘗試</button>
+    </div>
+
+    <!-- 空資料狀態 -->
+    <div v-else-if="rooms.length === 0" class="text-center py-5 text-muted">
+      <p>目前尚無教室資料，請點擊上方按鈕新增。</p>
+    </div>
+
+    <!-- 表格內容 -->
+    <div v-else class="table-responsive">
+      <table class="table table-hover table-bordered align-middle">
+        <thead class="table-light">
+          <tr>
+            <th scope="col">名稱</th>
+            <th scope="col">容納人數</th>
+            <th scope="col">設備</th>
+            <th scope="col">描述</th>
+            <th scope="col">時租費率</th>
+            <th scope="col">狀態</th>
+            <th scope="col" class="text-center" style="width: 150px;">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="room in rooms" :key="room.id">
+            <td class="fw-bold">{{ room.name }}</td>
+            <td>{{ room.capacity }} 人</td>
+            <td>{{ room.equipment || '無特殊設備' }}</td>
+            <td>{{ room.description || '-' }}</td>
+            <td>${{ room.hourly_rate }}/hr</td>
+            <td>
+              <span class="badge" :class="room.is_available ? 'bg-success' : 'bg-secondary'">
+                {{ room.is_available ? '可用' : '維護中 / 不可用' }}
+              </span>
+            </td>
+            <td class="text-center">
+              <button @click="openEdit(room.id)" class="btn btn-primary btn-sm me-1">編輯</button>
+              <button @click="deleteRoom(room.id)" class="btn btn-danger btn-sm">刪除</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
     <!-- Bootstrap Modal for adding/editing room -->
     <div class="modal fade" id="editRoomModal" tabindex="-1" aria-labelledby="editRoomModalLabel" aria-hidden="true">
       <div class="modal-dialog modal-lg">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title" id="editRoomModalLabel">{{ editingRoomId ? '編輯教室' : '新增教室' }}</h5>
+            <h5 class="modal-title" id="editRoomModalLabel">{{ editingId ? '編輯教室' : '新增教室' }}</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
-            <AddRoom v-if="showEditModal" :roomId="editingRoomId" @room-updated="handleRoomUpdated" @close-modal="closeEditModal" />
+            <AddRoom
+              v-if="showForm"
+              :roomId="editingId"
+              @room-updated="handleRoomUpdated"
+              @close-modal="closeModal"
+            />
           </div>
         </div>
       </div>
@@ -50,74 +84,64 @@
 </template>
 
 <script>
-import apiService from '@/utils/api';
-import AddRoom from '../forms/AddRoom.vue'; // 引入 AddRoom 組件
-import { Modal } from 'bootstrap'; // 引入 Bootstrap Modal JS
+import api, { API_ENDPOINTS } from '@/utils/api';
+import AddRoom from '../forms/AddRoom.vue';
+import { useCrudModal } from '@/composables/useCrudModal';
+import { showToast } from '@/utils/toast';
+import { showConfirm } from '@/utils/dialog';
 
 export default {
+  name: 'Rooms',
   components: {
     AddRoom
+  },
+  setup() {
+    const { showForm, editingId, initModal, openCreate, openEdit, closeModal } = useCrudModal('editRoomModal');
+    return { showForm, editingId, initModal, openCreate, openEdit, closeModal };
   },
   data() {
     return {
       rooms: [],
-      showEditModal: false, // 控制 AddRoom 組件的渲染
-      editingRoomId: null,
-      editModal: null // 用於儲存 Bootstrap Modal 實例
+      loading: false,
+      error: null
     };
   },
   mounted() {
-    // 在組件掛載後初始化 Bootstrap Modal
-    this.editModal = new Modal(document.getElementById('editRoomModal'));
-    // 監聽 modal 關閉事件，以便重置狀態
-    document.getElementById('editRoomModal').addEventListener('hidden.bs.modal', () => {
-      this.showEditModal = false;
-      this.editingRoomId = null;
-    });
+    this.initModal();
   },
   created() {
     this.fetchRooms();
   },
   methods: {
-    fetchRooms() {
-      apiService.get('rooms')
-        .then(response => response.json())
-        .then(data => {
-          this.rooms = data.rooms;
-        })
-        .catch(error => {
-          console.error('獲取教室列表失敗:', error);
-        });
+    async fetchRooms() {
+      this.loading = true;
+      this.error = null;
+      try {
+        const data = await api.get(API_ENDPOINTS.ROOMS);
+        this.rooms = data.rooms || [];
+      } catch (err) {
+        console.error('獲取教室列表失敗:', err);
+        this.error = '獲取教室列表失敗，請稍後再試。';
+      } finally {
+        this.loading = false;
+      }
     },
-    addNewRoom() {
-      this.editingRoomId = null; // 設定為 null 表示新增模式
-      this.showEditModal = true; // 渲染 AddRoom 組件
-      this.editModal.show(); // 顯示 Bootstrap Modal
-    },
-    editRoom(id) {
-      this.editingRoomId = id;
-      this.showEditModal = true; // 渲染 AddRoom 組件
-      this.editModal.show(); // 顯示 Bootstrap Modal
-    },
-    deleteRoom(id) {
-      if (confirm('確定要刪除這間教室嗎？')) {
-        apiService.delete(`rooms/${id}`)
-          .then(response => response.json())
-          .then(() => {
-            this.fetchRooms(); // Refresh the list after deletion
-          })
-          .catch(error => {
-            console.error('刪除教室失敗:', error);
-          });
+    async deleteRoom(id) {
+      const confirmed = await showConfirm('確定要刪除這間教室嗎？');
+      if (!confirmed) return;
+
+      try {
+        await api.delete(`${API_ENDPOINTS.ROOMS}/${id}`);
+        showToast('教室已成功刪除！', 'success');
+        this.fetchRooms();
+      } catch (err) {
+        console.error('刪除教室失敗:', err);
+        showToast('刪除教室失敗，請重試。', 'error');
       }
     },
     handleRoomUpdated() {
-      this.fetchRooms(); // 教室數據更新後刷新列表
-      this.editModal.hide(); // 關閉 Bootstrap Modal
-    },
-    closeEditModal() {
-      // 由 AddRoom 組件發出，用於取消或錯誤時關閉 modal
-      this.editModal.hide();
+      this.fetchRooms();
+      this.closeModal();
     }
   }
 };
@@ -125,21 +149,6 @@ export default {
 
 <style scoped>
 .rooms {
-  padding: 20px;
-}
-.room-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-.room-table th, .room-table td {
-  border: 1px solid #ccc;
-  padding: 8px;
-  text-align: left;
-}
-.room-table th {
-  background-color: #f2f2f2;
-}
-.room-table button {
-  margin-right: 5px;
+  padding: 10px;
 }
 </style>
