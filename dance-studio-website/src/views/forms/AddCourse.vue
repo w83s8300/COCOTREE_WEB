@@ -34,6 +34,23 @@
         <label for="price" class="form-label">扣堂數:</label>
         <input type="number" id="price" class="form-control" v-model="course.price" min="1" step="1">
       </div>
+      <div class="form-group mb-3 p-3 bg-light rounded-3 border">
+        <div class="form-check form-switch mb-1">
+          <input 
+            class="form-check-input" 
+            type="checkbox" 
+            role="switch" 
+            id="allow_monthly_pass" 
+            v-model="course.allow_monthly_pass"
+          >
+          <label class="form-check-label fw-bold text-dark" for="allow_monthly_pass">
+            🌟 支援「月費暢跳」（持有效月費學員免扣堂數）
+          </label>
+        </div>
+        <small class="text-muted d-block">
+          開啟時，持有效「月費」之學員報名此課程時將扣除 0 堂；關閉時，即便學員持月費亦需照常扣除堂數。
+        </small>
+      </div>
       <div class="form-group">
         <label for="teacher_id" class="form-label">授課老師:</label>
         <select id="teacher_id" class="form-select" v-model="course.teacher_id">
@@ -189,6 +206,7 @@ export default {
         duration_minutes: 60,
         max_students: 15,
         price: null,
+        allow_monthly_pass: true,
         teacher_id: null,
         base_salary: 0,
         low_student_threshold: 0,
@@ -265,6 +283,7 @@ export default {
         duration_minutes: 60,
         max_students: 15,
         price: null,
+        allow_monthly_pass: true,
         teacher_id: null,
         base_salary: 0,
         low_student_threshold: 0,
@@ -302,7 +321,8 @@ export default {
             low_student_salary: data.course.low_student_salary ?? 0,
             extra_student_threshold: data.course.extra_student_threshold ?? 0,
             extra_student_fee: data.course.extra_student_fee ?? 0,
-            salary_cap: data.course.salary_cap ?? 0
+            salary_cap: data.course.salary_cap ?? 0,
+            allow_monthly_pass: data.course.allow_monthly_pass !== false && data.course.allow_monthly_pass !== 0
           };
         })
         .catch(error => {

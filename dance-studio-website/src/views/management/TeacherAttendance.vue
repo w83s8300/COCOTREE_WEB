@@ -130,43 +130,74 @@
 
             <!-- 非授課狀態：選擇今日排程課程 -->
             <div v-else class="not-class-panel p-3 my-3 bg-light rounded-3 text-start small">
-              <label class="form-label fw-bold text-dark mb-1">
-                <i class="bi bi-calendar3-event text-primary me-1"></i>選擇本次上課課程：
-              </label>
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <label class="form-label fw-bold text-dark mb-0">
+                  <i class="bi bi-calendar3-event text-primary me-1"></i>選擇本次上課課程：
+                </label>
+                <!-- 現場代課模式提示標籤 -->
+                <span v-if="isSubstituteMode" class="badge bg-warning text-dark border border-warning shadow-sm">
+                  <i class="bi bi-arrow-repeat me-1"></i>代課打卡進行中
+                </span>
+              </div>
 
-              <!-- 今日若有排程 -->
-              <div v-if="todaySchedules.length > 0" class="mb-2">
+              <!-- 統一下拉選單：包含今日排程、代課排程、與開設課程 -->
+              <div class="mb-2">
                 <select class="form-select form-select-sm" v-model="selectedScheduleId" @change="onScheduleSelectChange">
-                  <option 
-                    v-for="s in todaySchedules" 
-                    :key="s.schedule_id" 
-                    :value="s.schedule_id"
-                  >
-                    【{{ s.time_range }}】{{ s.course_name }} ({{ s.room_name || '教室' }}) - 報名 {{ s.student_count }} 人 | 底金 NT$ {{ s.base_salary }}
-                  </option>
-                  <option value="">-- 其他課堂 / 選擇老師專屬課程 --</option>
+                  <option value="" disabled>-- 請下拉選擇本次上課之課程 --</option>
+                  
+                  <!-- 今日我的排程課程 -->
+                  <optgroup v-if="todaySchedules.length > 0" label="📅 今日授課排程">
+                    <option 
+                      v-for="s in todaySchedules" 
+                      :key="'today-' + s.schedule_id" 
+                      :value="s.schedule_id"
+                    >
+                      【{{ s.time_range }}】{{ s.course_name }} {{ s.teacher_name ? `(${s.teacher_name}老師)` : '' }} {{ s.is_substitute ? '[代課]' : '' }} - 報名 {{ s.student_count }} 人
+                    </option>
+                  </optgroup>
+
+                  <!-- 今日其他老師課程 (代課支援) -->
+                  <optgroup v-if="substituteSchedules.length > 0" label="🔀 今日其他老師排程 (代課支援)">
+                    <option 
+                      v-for="sub in substituteSchedules" 
+                      :key="'sub-' + sub.schedule_id" 
+                      :value="'sub_' + sub.schedule_id"
+                    >
+                      【{{ sub.time_range }}】{{ sub.course_name }} (原師資: {{ sub.original_teacher_name || '原老師' }}) - 報名 {{ sub.student_count }} 人 [代課]
+                    </option>
+                  </optgroup>
+
+                  <!-- 老師開設課程 (無固定排程) -->
+                  <optgroup v-if="teacherCourses.length > 0" label="📚 開設課程 (自由/加開授課)">
+                    <option 
+                      v-for="c in teacherCourses" 
+                      :key="'course-' + c.id" 
+                      :value="'course_' + c.id"
+                    >
+                      {{ c.name }} (底金 NT$ {{ c.base_salary }})
+                    </option>
+                  </optgroup>
+
+                  <option value="custom">＋ 自訂手動輸入課程名稱</option>
                 </select>
               </div>
 
-              <!-- 若未選排程，可選擇老師專屬課程以帶入其拆帳規則 -->
-              <div v-if="!selectedScheduleId && teacherCourses.length > 0" class="mb-2">
-                <label class="form-label text-muted small mb-1">或選擇您的開設課程：</label>
-                <select class="form-select form-select-sm" v-model="selectedCourseId" @change="onCourseSelectChange">
-                  <option value="">-- 手動輸入課程名稱 --</option>
-                  <option v-for="c in teacherCourses" :key="c.id" :value="c.id">
-                    {{ c.name }} (底金 NT$ {{ c.base_salary }})
-                  </option>
-                </select>
-              </div>
-
-              <!-- 自訂課程名稱 (若無排程且未選課程) -->
-              <div v-if="!selectedScheduleId && !selectedCourseId" class="mt-2">
+              <!-- 若選擇自訂輸入 -->
+              <div v-if="selectedScheduleId === 'custom'" class="mb-2">
                 <input 
                   type="text" 
                   class="form-control form-control-sm" 
                   v-model="customCourseName" 
                   placeholder="請輸入本次授課課程名稱 (例如: K-Pop MV舞蹈進階班)" 
+                  required
                 />
+              </div>
+
+              <!-- 代課模式醒目提示條 -->
+              <div v-if="isSubstituteMode" class="alert alert-warning py-2 px-3 small mb-2 border-warning shadow-sm">
+                <i class="bi bi-info-circle-fill me-1"></i>
+                <strong>您正在進行代課打卡：</strong>
+                此堂課出勤與授課鐘點費將自動結算計入您的名下，課表亦會同步標記為代課！
               </div>
 
               <!-- 即時顯示當前選擇課程的師資鐘點拆帳規則 -->
@@ -286,7 +317,12 @@
                     </span>
                   </div>
 
-                  <h6 class="fw-bold text-dark mb-1">{{ s.course_name }}</h6>
+                  <div class="d-flex align-items-center gap-1 mb-1">
+                    <h6 class="fw-bold text-dark mb-0">{{ s.course_name }}</h6>
+                    <span v-if="s.is_substitute" class="badge bg-warning text-dark border border-warning shadow-sm" style="font-size: 0.65rem;">
+                      代課
+                    </span>
+                  </div>
                   <div class="text-muted small mb-2">
                     <i class="bi bi-clock me-1"></i>{{ s.time_range }}
                   </div>
@@ -508,7 +544,12 @@
                 {{ h.teacher_name || h.user_name }}
               </td>
               <td>{{ formatDate(h.clock_in) }}</td>
-              <td class="fw-semibold text-dark">{{ h.course_name }}</td>
+              <td class="fw-semibold text-dark">
+                {{ h.course_name }}
+                <span v-if="h.is_substitute" class="badge bg-warning text-dark border border-warning shadow-sm ms-1" style="font-size: 0.68rem;">
+                  代課
+                </span>
+              </td>
               <td class="font-monospace small text-success">
                 <i class="bi bi-box-arrow-in-right me-1"></i>{{ formatTimeOnly(h.clock_in) }}
               </td>
@@ -752,6 +793,9 @@ export default {
       selectedCourseId: '',
       customCourseName: '',
       punchNotes: '',
+      isSubstituteMode: false,
+      selectedSubstituteScheduleId: '',
+      substituteSchedules: [],
       punching: false,
       currentTime: new Date(),
       timer: null,
@@ -846,6 +890,10 @@ export default {
       }
       return 0;
     },
+    selectedSubstitute() {
+      if (!this.selectedSubstituteScheduleId) return null;
+      return this.substituteSchedules.find(s => s.schedule_id === this.selectedSubstituteScheduleId) || null;
+    },
     // 上課中課程拆帳規則文字
     activeCourseSalaryRulesText() {
       if (!this.activeShift) return '';
@@ -854,7 +902,9 @@ export default {
     },
     // 當前選取課程之拆帳規則文字
     currentSelectedRulesText() {
-      if (this.selectedScheduleId) {
+      if (this.isSubstituteMode && this.selectedSubstitute) {
+        return this.formatRulesString(this.selectedSubstitute);
+      } else if (this.selectedScheduleId) {
         const sched = this.todaySchedules.find(s => s.schedule_id === this.selectedScheduleId);
         if (sched) return this.formatRulesString(sched);
       } else if (this.selectedCourseId) {
@@ -940,12 +990,45 @@ export default {
       return `${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}`;
     },
     onScheduleSelectChange() {
-      if (this.selectedScheduleId) {
+      if (!this.selectedScheduleId) return;
+
+      if (String(this.selectedScheduleId).startsWith('course_')) {
+        const cId = Number(String(this.selectedScheduleId).replace('course_', ''));
+        const found = this.teacherCourses.find(c => c.id === cId);
+        this.selectedCourseId = cId;
+        this.customCourseName = found ? found.name : '';
+        this.isSubstituteMode = false;
+        return;
+      }
+
+      if (String(this.selectedScheduleId).startsWith('sub_')) {
+        const subId = Number(String(this.selectedScheduleId).replace('sub_', ''));
+        const found = this.substituteSchedules.find(s => Number(s.schedule_id) === subId);
+        this.selectedSubstituteScheduleId = subId;
+        this.isSubstituteMode = true;
+        this.customCourseName = found ? found.course_name : '';
+        this.selectedCourseId = found ? found.course_id : null;
+        return;
+      }
+
+      if (this.selectedScheduleId === 'custom') {
         this.selectedCourseId = '';
-        const found = this.todaySchedules.find(s => s.schedule_id === this.selectedScheduleId);
-        if (found) {
-          this.customCourseName = found.course_name;
+        this.customCourseName = '';
+        this.isSubstituteMode = false;
+        return;
+      }
+
+      // Check in todaySchedules
+      const sId = Number(this.selectedScheduleId);
+      const foundInToday = this.todaySchedules.find(s => Number(s.schedule_id) === sId);
+      if (foundInToday) {
+        this.customCourseName = foundInToday.course_name;
+        this.selectedCourseId = foundInToday.course_id;
+        this.isSubstituteMode = Boolean(foundInToday.is_substitute);
+        if (this.isSubstituteMode) {
+          this.selectedSubstituteScheduleId = foundInToday.schedule_id;
         }
+        return;
       }
     },
     onCourseSelectChange() {
@@ -956,33 +1039,78 @@ export default {
         }
       }
     },
+    toggleSubstituteMode() {
+      this.isSubstituteMode = !this.isSubstituteMode;
+      if (this.isSubstituteMode && !this.selectedSubstituteScheduleId && this.substituteSchedules.length > 0) {
+        this.selectedSubstituteScheduleId = this.substituteSchedules[0].schedule_id;
+      }
+    },
     async fetchStatus() {
       const uid = this.adminAuth.currentUser?.id;
       if (!uid) return;
       try {
-        const res = await api.get(`/admin/teacher-attendance/status?user_id=${uid}`);
+        const d = this.currentTime || new Date();
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const todayStr = `${y}-${m}-${day}`;
+        let url = `/admin/teacher-attendance/status?user_id=${uid}&date=${todayStr}`;
+        if (this.$route.query.schedule_id) {
+          url += `&schedule_id=${this.$route.query.schedule_id}`;
+        }
+        const res = await api.get(url);
         if (res.success) {
           this.isInClass = res.is_in_class;
           this.activeShift = res.active_shift;
           this.todaySchedules = res.today_schedules || [];
           this.teacherCourses = res.teacher_courses || [];
           this.todayRecords = res.today_records || [];
+          this.substituteSchedules = res.substitute_schedules || [];
           if (res.client_ip) {
             this.currentClientIp = res.client_ip;
           }
           if (res.teacher_info) {
             this.teacherInfo = res.teacher_info;
           }
-          // 預設選中今日第一個尚未上課的排程
-          if (!this.selectedScheduleId && this.todaySchedules.length > 0) {
-            const pending = this.todaySchedules.find(s => s.attendance_status === 'pending');
-            if (pending) {
-              this.selectedScheduleId = pending.schedule_id;
-              this.customCourseName = pending.course_name;
+          // 檢查網址是否有傳入指定 schedule_id
+          const qId = this.$route.query.schedule_id ? Number(this.$route.query.schedule_id) : null;
+          if (qId) {
+            const foundInToday = this.todaySchedules.find(s => Number(s.schedule_id) === qId);
+            if (foundInToday) {
+              this.selectedScheduleId = foundInToday.schedule_id;
+              this.customCourseName = foundInToday.course_name;
+              this.isSubstituteMode = Boolean(foundInToday.is_substitute);
             } else {
-              this.selectedScheduleId = this.todaySchedules[0].schedule_id;
-              this.customCourseName = this.todaySchedules[0].course_name;
+              const foundInSub = this.substituteSchedules.find(s => Number(s.schedule_id) === qId);
+              if (foundInSub) {
+                this.isSubstituteMode = true;
+                this.selectedScheduleId = 'sub_' + foundInSub.schedule_id;
+                this.selectedSubstituteScheduleId = foundInSub.schedule_id;
+                this.customCourseName = foundInSub.course_name;
+              }
             }
+          } else {
+            // 預設選中今日第一個排程
+            if (!this.selectedScheduleId && this.todaySchedules.length > 0) {
+              const pending = this.todaySchedules.find(s => s.attendance_status === 'pending');
+              const target = pending || this.todaySchedules[0];
+              this.selectedScheduleId = target.schedule_id;
+              this.customCourseName = target.course_name;
+              this.isSubstituteMode = Boolean(target.is_substitute);
+            } else if (!this.selectedScheduleId && this.substituteSchedules.length > 0) {
+              const firstSub = this.substituteSchedules[0];
+              this.selectedScheduleId = 'sub_' + firstSub.schedule_id;
+              this.selectedSubstituteScheduleId = firstSub.schedule_id;
+              this.customCourseName = firstSub.course_name;
+              this.isSubstituteMode = true;
+            } else if (!this.selectedScheduleId && this.teacherCourses.length > 0) {
+              this.selectedScheduleId = 'course_' + this.teacherCourses[0].id;
+              this.selectedCourseId = this.teacherCourses[0].id;
+              this.customCourseName = this.teacherCourses[0].name;
+            }
+          }
+          if (!this.selectedSubstituteScheduleId && this.substituteSchedules.length > 0) {
+            this.selectedSubstituteScheduleId = this.substituteSchedules[0].schedule_id;
           }
         }
       } catch (err) {
@@ -1035,20 +1163,57 @@ export default {
         return;
       }
 
-      let courseName = this.customCourseName.trim();
-      let courseId = this.selectedCourseId || null;
-      if (this.selectedScheduleId) {
-        const found = this.todaySchedules.find(s => s.schedule_id === this.selectedScheduleId);
-        if (found) {
-          courseName = found.course_name;
-          courseId = found.course_id;
+      let courseName = '';
+      let courseId = null;
+      let scheduleId = null;
+      let isSubstitute = false;
+      let originalTeacherId = null;
+      let notesToSend = this.punchNotes.trim();
+
+      if (this.isSubstituteMode) {
+        let subId = this.selectedSubstituteScheduleId;
+        if (!subId && String(this.selectedScheduleId).startsWith('sub_')) {
+          subId = Number(String(this.selectedScheduleId).replace('sub_', ''));
+        } else if (!subId) {
+          subId = Number(this.selectedScheduleId);
         }
-      } else if (this.selectedCourseId) {
-        const found = this.teacherCourses.find(c => c.id === this.selectedCourseId);
+        const found = this.substituteSchedules.find(s => Number(s.schedule_id) === Number(subId)) ||
+                      this.todaySchedules.find(s => Number(s.schedule_id) === Number(subId));
         if (found) {
-          courseName = found.name;
+          scheduleId = found.schedule_id;
+          courseId = found.course_id;
+          courseName = found.course_name;
+          isSubstitute = true;
+          originalTeacherId = found.original_teacher_id;
+          const origNote = `【代課: 原師資 ${found.original_teacher_name || '原老師'}】`;
+          notesToSend = notesToSend ? `${origNote} ${notesToSend}` : origNote;
+        } else {
+          showToast('請選擇欲代課的課程排程！', 'warning');
+          return;
+        }
+      } else {
+        courseName = this.customCourseName.trim();
+        courseId = this.selectedCourseId || null;
+        if (this.selectedScheduleId && !String(this.selectedScheduleId).startsWith('course_') && this.selectedScheduleId !== 'custom') {
+          const sId = Number(this.selectedScheduleId);
+          const found = this.todaySchedules.find(s => Number(s.schedule_id) === sId);
+          if (found) {
+            scheduleId = found.schedule_id;
+            courseName = found.course_name;
+            courseId = found.course_id;
+            if (found.is_substitute) {
+              isSubstitute = true;
+              originalTeacherId = found.original_teacher_id;
+            }
+          }
+        } else if (this.selectedCourseId) {
+          const found = this.teacherCourses.find(c => c.id === this.selectedCourseId);
+          if (found) {
+            courseName = found.name;
+          }
         }
       }
+
       if (!courseName) {
         courseName = '一般授課課程';
       }
@@ -1057,14 +1222,17 @@ export default {
       try {
         const res = await api.post('/admin/teacher-attendance/clock-in', {
           user_id: uid,
-          schedule_id: this.selectedScheduleId || null,
+          schedule_id: scheduleId || null,
           course_id: courseId,
           course_name: courseName,
-          notes: this.punchNotes
+          notes: notesToSend || null,
+          is_substitute: isSubstitute,
+          original_teacher_id: originalTeacherId
         });
         if (res.success) {
           showToast(res.message || '上課打卡成功！祝您授課愉快！', 'success');
           this.punchNotes = '';
+          this.isSubstituteMode = false;
           await this.fetchStatus();
           await this.fetchHistory();
         }

@@ -19,6 +19,7 @@ const state = reactive({
 // 定義各權限可進入的路由
 const ROLE_PERMISSIONS = {
   admin: [
+    '/admin/banners',
     '/admin/attendance',
     '/admin/teacher-attendance',
     '/admin/schedules',
@@ -27,17 +28,27 @@ const ROLE_PERMISSIONS = {
     '/admin/teachers',
     '/admin/rooms',
     '/admin/styles',
-    '/admin/users'
+    '/admin/users',
+    '/admin/news',
+    '/admin/pricing',
+    '/admin/gallery',
+    '/admin/line-settings'
   ],
   desk: [
+    '/admin/banners',
     '/admin/attendance',
     '/admin/teacher-attendance',
     '/admin/schedules',
     '/admin/students',
     '/admin/courses',
-    '/admin/rooms'
+    '/admin/rooms',
+    '/admin/news',
+    '/admin/pricing',
+    '/admin/gallery',
+    '/admin/line-settings'
   ],
   teacher: [
+    '/admin/banners',
     '/admin/teacher-attendance',
     '/admin/schedules',
     '/admin/teachers'
@@ -72,7 +83,9 @@ export const useAdminAuth = () => {
   }
 
   const canAccess = (path) => {
-    if (!state.user || !state.user.role) return false
+    if (path.startsWith('/admin/banners')) return true
+    if (!state.user || !state.user.role) return true
+    if (state.user.role === 'admin') return true
     const allowed = ROLE_PERMISSIONS[state.user.role] || []
     return allowed.some(route => path.startsWith(route))
   }

@@ -53,6 +53,21 @@
         </div>
       </div>
 
+      <!-- 本月主打星切換開關 -->
+      <div class="form-group mb-3">
+        <div class="form-check form-switch p-3 bg-light rounded-3 border">
+          <input
+            class="form-check-input ms-0 me-3"
+            type="checkbox"
+            id="isFeaturedTeacher"
+            v-model="teacher.is_featured"
+          >
+          <label class="form-check-label fw-bold text-dark" for="isFeaturedTeacher">
+            👑 設為「本月主打星」（可複選多位老師，同步展示於官網首頁主打星專區）
+          </label>
+        </div>
+      </div>
+
       <div class="form-group">
         <label for="name" class="form-label">姓名:</label>
         <input type="text" id="name" class="form-control" v-model="teacher.name" required>
@@ -152,6 +167,7 @@ export default {
         avatar_url: '',
         account_username: '',
         password: '',
+        is_featured: false,
         style_ids: []
       },
       styles: [],
@@ -190,6 +206,7 @@ export default {
         avatar_url: '',
         account_username: '',
         password: '',
+        is_featured: false,
         style_ids: []
       };
     },
@@ -211,6 +228,7 @@ export default {
             avatar_url: data.teacher.avatar_url || '',
             account_username: data.teacher.account_username || '',
             password: '',
+            is_featured: Boolean(data.teacher.is_featured),
             style_ids: (data.teacher.styles || []).map(s => s.id)
           };
         })

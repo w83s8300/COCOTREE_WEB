@@ -31,6 +31,7 @@
       <table class="table table-hover table-bordered align-middle">
         <thead class="table-light">
           <tr>
+            <th scope="col" style="width: 80px;" class="text-center">照片</th>
             <th scope="col">名稱</th>
             <th scope="col">容納人數</th>
             <th scope="col">設備</th>
@@ -42,6 +43,16 @@
         </thead>
         <tbody>
           <tr v-for="room in rooms" :key="room.id">
+            <td class="text-center p-2">
+              <img
+                v-if="room.image_url"
+                :src="room.image_url"
+                class="rounded object-fit-cover shadow-sm border"
+                style="width: 65px; height: 45px;"
+                :alt="room.name"
+              />
+              <span v-else class="badge bg-light text-muted border small">無照片</span>
+            </td>
             <td class="fw-bold">{{ room.name }}</td>
             <td>{{ room.capacity }} 人</td>
             <td>{{ room.equipment || '無特殊設備' }}</td>

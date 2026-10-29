@@ -49,7 +49,11 @@ export const API_ENDPOINTS = {
   ROOMS: '/rooms',
   COURSES: '/courses',
   SCHEDULES: '/schedules',
-  ENROLLMENTS: '/enrollments'
+  ENROLLMENTS: '/enrollments',
+  NEWS: '/news',
+  PRICING: '/pricing',
+  PRICING_ORDERS: '/pricing/orders',
+  BANNERS: '/banners'
 }
 
 /**

@@ -7,6 +7,10 @@ from datetime import datetime, date, timedelta
 import os
 import time
 import math
+import json
+import urllib.request
+import urllib.parse
+import urllib.error
 
 app = Flask(__name__)
 CORS(app)  # 允許跨域請求
@@ -15,7 +19,13 @@ api = Api(app)
 # 上傳檔案存儲目錄
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
 AVATARS_FOLDER = os.path.join(UPLOAD_FOLDER, 'avatars')
+ROOMS_FOLDER = os.path.join(UPLOAD_FOLDER, 'rooms')
+GALLERY_FOLDER = os.path.join(UPLOAD_FOLDER, 'gallery')
 os.makedirs(AVATARS_FOLDER, exist_ok=True)
+os.makedirs(ROOMS_FOLDER, exist_ok=True)
+os.makedirs(GALLERY_FOLDER, exist_ok=True)
+BANNERS_FOLDER = os.path.join(UPLOAD_FOLDER, 'banners')
+os.makedirs(BANNERS_FOLDER, exist_ok=True)
 
 @app.route('/api/uploads/<path:filename>')
 def serve_uploaded_file(filename):
@@ -29,7 +39,8 @@ DB_CONFIG = {
     'user': 'user',
     'password': 'userpass',
     'database': 'testdb',
-    'charset': 'utf8mb4'
+    'charset': 'utf8mb4',
+    'buffered': True
 }
 
 def get_db_connection():
@@ -50,13 +61,116 @@ def get_db_connection():
                 print("資料庫連接失敗，已達最大重試次數")
                 return None
 
+def ensure_pricing_database_tables(cursor):
+    """確保 pricing_plans, pricing_orders 以及 students 與 courses 的相關欄位齊備"""
+    try:
+        # 1. 確保 students 欄位
+        cursor.execute("SHOW COLUMNS FROM students LIKE 'membership_expiry'")
+        if not cursor.fetchall():
+            cursor.execute("SHOW COLUMNS FROM students LIKE 'expiry_date'")
+            if cursor.fetchall():
+                cursor.execute("ALTER TABLE students ADD COLUMN membership_expiry DATE NULL COMMENT '會員年費到期日' AFTER expiry_date")
+                cursor.execute("UPDATE students SET membership_expiry = expiry_date WHERE membership_expiry IS NULL AND expiry_date IS NOT NULL")
+            else:
+                cursor.execute("ALTER TABLE students ADD COLUMN membership_expiry DATE NULL COMMENT '會員年費到期日'")
+
+        cursor.execute("SHOW COLUMNS FROM students LIKE 'expiry_date'")
+        if not cursor.fetchall():
+            cursor.execute("ALTER TABLE students ADD COLUMN expiry_date DATE NULL COMMENT '舊版會員到期日相容欄位' AFTER membership_expiry")
+            cursor.execute("UPDATE students SET expiry_date = membership_expiry WHERE expiry_date IS NULL AND membership_expiry IS NOT NULL")
+
+        cursor.execute("SHOW COLUMNS FROM students LIKE 'monthly_pass_expiry'")
+        if not cursor.fetchall():
+            cursor.execute("ALTER TABLE students ADD COLUMN monthly_pass_expiry DATE NULL COMMENT '月費到期日'")
+
+        cursor.execute("SHOW COLUMNS FROM students LIKE 'bank_last_5'")
+        if not cursor.fetchall():
+            cursor.execute("ALTER TABLE students ADD COLUMN bank_last_5 VARCHAR(10) NULL COMMENT '約定轉帳銀行後5碼'")
+
+        # 2. 確保 pricing_plans 表與欄位
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS pricing_plans (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            title VARCHAR(100) NOT NULL,
+            subtitle VARCHAR(100) NULL,
+            price VARCHAR(50) NOT NULL,
+            unit VARCHAR(100) NOT NULL,
+            plan_type VARCHAR(20) NOT NULL DEFAULT 'classes',
+            classes_count INT DEFAULT 1,
+            validity_days INT NOT NULL DEFAULT 0,
+            original_price VARCHAR(50) NULL,
+            is_popular BOOLEAN DEFAULT FALSE,
+            requires_membership BOOLEAN DEFAULT FALSE COMMENT '是否限有效會員年費學員購買',
+            features TEXT NOT NULL,
+            button_text VARCHAR(50) DEFAULT '買課',
+            button_link VARCHAR(255) DEFAULT '/contact',
+            sort_order INT DEFAULT 0,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        """)
+
+        for col, col_def in [
+            ('plan_type', "VARCHAR(20) NOT NULL DEFAULT 'classes'"),
+            ('classes_count', "INT DEFAULT 1"),
+            ('validity_days', "INT NOT NULL DEFAULT 0"),
+            ('requires_membership', "BOOLEAN DEFAULT FALSE COMMENT '是否限有效會員年費學員購買'")
+        ]:
+            cursor.execute(f"SHOW COLUMNS FROM pricing_plans LIKE '{col}'")
+            if not cursor.fetchall():
+                cursor.execute(f"ALTER TABLE pricing_plans ADD COLUMN {col} {col_def}")
+
+        # 3. 確保 pricing_orders 表與欄位
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS pricing_orders (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            order_no VARCHAR(50) UNIQUE NOT NULL,
+            student_id INT NOT NULL,
+            student_name VARCHAR(100) NOT NULL,
+            student_phone VARCHAR(20) NOT NULL,
+            plan_id INT NULL,
+            plan_title VARCHAR(100) NOT NULL,
+            price VARCHAR(50) NOT NULL,
+            plan_type VARCHAR(20) NOT NULL DEFAULT 'classes',
+            requires_membership BOOLEAN DEFAULT FALSE COMMENT '是否限有效會員年費學員購買',
+            classes_count INT DEFAULT 1,
+            validity_days INT NOT NULL DEFAULT 0,
+            bank_last_5 VARCHAR(10) NOT NULL,
+            status ENUM('pending', 'confirmed', 'rejected', 'cancelled') DEFAULT 'pending',
+            notes TEXT NULL,
+            admin_notes TEXT NULL,
+            confirmed_by INT NULL,
+            confirmed_at DATETIME NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+            FOREIGN KEY (plan_id) REFERENCES pricing_plans(id) ON DELETE SET NULL,
+            FOREIGN KEY (confirmed_by) REFERENCES admin_users(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        """)
+
+        for col, col_def in [
+            ('plan_type', "VARCHAR(20) NOT NULL DEFAULT 'classes'"),
+            ('requires_membership', "BOOLEAN DEFAULT FALSE COMMENT '是否限有效會員年費學員購買'"),
+            ('validity_days', "INT NOT NULL DEFAULT 0"),
+            ('classes_count', "INT DEFAULT 1")
+        ]:
+            cursor.execute(f"SHOW COLUMNS FROM pricing_orders LIKE '{col}'")
+            if not cursor.fetchall():
+                cursor.execute(f"ALTER TABLE pricing_orders ADD COLUMN {col} {col_def}")
+
+    except Exception as err:
+        print(f"ensure_pricing_database_tables 警告: {err}")
+
+
 def init_database_tables():
     """初始化所有資料庫表格，包含重試機制"""
     print("正在初始化資料庫表格...")
     connection = get_db_connection()
     if connection:
         try:
-            cursor = connection.cursor()
+            cursor = connection.cursor(buffered=True)
             
             # 學生表格
             students_table = """
@@ -70,7 +184,8 @@ def init_database_tables():
                 emergency_phone VARCHAR(20),
                 medical_notes TEXT,
                 remaining_classes INT DEFAULT 0 COMMENT '剩餘堂數',
-                membership_expiry DATE COMMENT '會員到期日',
+                membership_expiry DATE COMMENT '會員年費到期日',
+                monthly_pass_expiry DATE COMMENT '月費到期日',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )
@@ -136,6 +251,7 @@ def init_database_tables():
                 duration_minutes INT DEFAULT 60,
                 max_students INT DEFAULT 15,
                 price DECIMAL(10,2),
+                allow_monthly_pass BOOLEAN DEFAULT TRUE COMMENT '是否支援月費暢跳',
                 teacher_id INT,
                 base_salary DECIMAL(10,2) DEFAULT 0.00,
                 low_student_threshold INT DEFAULT 0,
@@ -273,7 +389,56 @@ def init_database_tables():
             cursor.execute(admin_users_table)
             cursor.execute(staff_attendance_table)
             cursor.execute(teacher_attendance_table)
+            # 課程價目表表格
+            pricing_plans_table = """
+            CREATE TABLE IF NOT EXISTS pricing_plans (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                title VARCHAR(100) NOT NULL,
+                subtitle VARCHAR(100) NULL,
+                price VARCHAR(50) NOT NULL,
+                unit VARCHAR(100) NOT NULL,
+                original_price VARCHAR(50) NULL,
+                is_popular BOOLEAN DEFAULT FALSE,
+                requires_membership BOOLEAN DEFAULT FALSE COMMENT '是否限有效會員年費學員購買',
+                features TEXT NOT NULL,
+                button_text VARCHAR(50) DEFAULT '買課',
+                button_link VARCHAR(255) DEFAULT '/contact',
+                sort_order INT DEFAULT 0,
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            """
+            cursor.execute(pricing_plans_table)
             cursor.execute(system_settings_table)
+
+            # 活動花絮相簿與照片表格
+            gallery_albums_table = """
+            CREATE TABLE IF NOT EXISTS gallery_albums (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                title VARCHAR(150) NOT NULL,
+                description TEXT NULL,
+                cover_image TEXT NULL,
+                event_date DATE NULL,
+                sort_order INT DEFAULT 0,
+                is_published BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            """
+            gallery_photos_table = """
+            CREATE TABLE IF NOT EXISTS gallery_photos (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                album_id INT NOT NULL,
+                image_url TEXT NOT NULL,
+                description VARCHAR(255) NULL,
+                sort_order INT DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (album_id) REFERENCES gallery_albums(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            """
+            cursor.execute(gallery_albums_table)
+            cursor.execute(gallery_photos_table)
 
             # 插入預設管理員、櫃檯、老師帳號
             seed_admin_users = """
@@ -291,7 +456,214 @@ def init_database_tables():
             ('attendance_allowed_ips', '', '允許打卡的IP白名單(逗號或換行分隔)')
             """
             cursor.execute(seed_system_settings)
+
+            # 插入預設須知設定與預設方案
+            seed_pricing_settings = """
+            INSERT IGNORE INTO system_settings (setting_key, setting_value, description) VALUES
+            ('pricing_notice_title', '學員報名與上課須知', '課程價目表須知標題'),
+            ('pricing_notice_content', '所有常規課程皆需提前於線上系統或向官方 LINE 預約登記。\n堂數方案為個人專屬權益，限本人上課使用，不得轉讓或轉售他人。\n方案自購買啟用起計，請於各方案指定之有效期限內使用完畢。\n若需取消或請假，請最晚於課程開始前 2 小時完成線上取消，以免扣除堂數。\n如遇天然災害或政府宣佈停班停課，本工作室常規課程將自動順延。', '課程價目表學員須知內容(每行一項)')
+            """
+            cursor.execute(seed_pricing_settings)
+
+            cursor.execute("SELECT COUNT(*) FROM pricing_plans")
+            cnt_row = cursor.fetchone()
+            if cnt_row and (cnt_row[0] if isinstance(cnt_row, tuple) else cnt_row.get('COUNT(*)', 0)) == 0:
+                default_plans = [
+                    ('單堂體驗', '適合初次體驗的學員', '$500', '/ 堂', None, False,
+                     json.dumps(['適合初次體驗的學員', '可任選一堂常規舞蹈課', '專業教練動作引導', '課後舞風諮詢'], ensure_ascii=False),
+                     '買課', '/contact', 1, True),
+                    ('小資方案', '適合規律每週練習者', '$3,200', '/ 8 堂 (平均 $400/堂)', None, False,
+                     json.dumps(['適合規律每週練習者', '使用期限 2 個月', '全時段常規課程皆適用', '請假彈性保留堂數'], ensure_ascii=False),
+                     '買課', '/contact', 2, True),
+                    ('熱血方案', '適合重度舞蹈愛好者', '$6,000', '/ 20 堂 (平均 $300/堂)', None, True,
+                     json.dumps(['適合重度舞蹈愛好者', '使用期限 4 個月', '全常規課程自由選修', '贈送專屬品牌運動毛巾', '享成果發表報名優先權'], ensure_ascii=False),
+                     '買課', '/contact', 3, True),
+                    ('尊榮月費', '當月份不限堂數暢快跳', '$8,000', '/ 月 (無限堂數)', None, False,
+                     json.dumps(['當月份不限堂數暢快跳', '全常規課程皆可預約', '場地個人租借 8 折特惠', '周邊服飾商品 9 折優惠'], ensure_ascii=False),
+                     '買課', '/contact', 4, True)
+                ]
+                cursor.executemany("""
+                    INSERT INTO pricing_plans (title, subtitle, price, unit, original_price, is_popular, features, button_text, button_link, sort_order, is_active)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, default_plans)
+
+            # 檢查並插入預設「會員年費」方案 (若不存在)
+            cursor.execute("SELECT id FROM pricing_plans WHERE plan_type = 'membership_fee' OR title = '會員年費'")
+            if not cursor.fetchone():
+                membership_features = json.dumps([
+                    '成為正式年度會員',
+                    '專屬會員資格有效期限 1 年 (365天)',
+                    '享有學員購課與優先報名權益',
+                    '專屬會員迎賓禮與活動專屬優惠'
+                ], ensure_ascii=False)
+                cursor.execute("""
+                    INSERT INTO pricing_plans 
+                    (title, subtitle, price, unit, plan_type, classes_count, validity_days, original_price, is_popular, requires_membership, features, button_text, button_link, sort_order, is_active)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, ('會員年費', '年度專屬會員資格與優惠', '$1,200', '/ 年 (365天)', 'membership_fee', 0, 365, None, 0, 0, membership_features, '買課', '/contact', 5, 1))
+
+            # 檢查並插入預設活動花絮相簿與照片
+            cursor.execute("SELECT COUNT(*) FROM gallery_albums")
+            gal_cnt_row = cursor.fetchone()
+            if gal_cnt_row and (gal_cnt_row[0] if isinstance(gal_cnt_row, tuple) else gal_cnt_row.get('COUNT(*)', 0)) == 0:
+                default_albums = [
+                    ('2023 年度成果展', '學員們一年努力的成果展示，充滿自信與熱情的舞台時刻。', 'https://picsum.photos/600/400?random=23', '2023-12-15', 1, 1, [
+                        ('https://picsum.photos/800/600?random=23', '學員們一年努力的成果展示 - 精彩瞬間1', 1),
+                        ('https://picsum.photos/800/600?random=231', '學員們一年努力的成果展示 - 精彩瞬間2', 2),
+                        ('https://picsum.photos/800/600?random=232', '學員們一年努力的成果展示 - 精彩瞬間3', 3),
+                    ]),
+                    ('街舞大賽', '熱血沸騰的街舞對決，舞者齊聚展現極限爆發力！', 'https://picsum.photos/600/400?random=24', '2023-10-20', 2, 1, [
+                        ('https://picsum.photos/800/600?random=24', '熱血沸騰的街舞對決 - 選手風采1', 1),
+                        ('https://picsum.photos/800/600?random=241', '熱血沸騰的街舞對決 - 選手風采2', 2),
+                        ('https://picsum.photos/800/600?random=242', '熱血沸騰的街舞對決 - 選手風采3', 3),
+                    ]),
+                    ('國際大師工作坊', '與國際知名舞者近距離學習，汲取頂尖舞感與技巧！', 'https://picsum.photos/600/400?random=25', '2023-08-12', 3, 1, [
+                        ('https://picsum.photos/800/600?random=25', '與國際知名舞者近距離學習 - 大師授課', 1),
+                        ('https://picsum.photos/800/600?random=251', '與國際知名舞者近距離學習 - 互動交流', 2),
+                    ]),
+                    ('聖誕派對', '充滿歡樂與舞蹈的聖誕節，溫馨同樂夜！', 'https://picsum.photos/600/400?random=26', '2023-12-25', 4, 1, [
+                        ('https://picsum.photos/800/600?random=26', '充滿歡樂與舞蹈的聖誕節 - 派對現場', 1),
+                        ('https://picsum.photos/800/600?random=261', '充滿歡樂與舞蹈的聖誕節 - 聖誕表演', 2),
+                    ]),
+                    ('快閃活動', '街頭突擊，展現舞蹈魅力，引爆全場歡呼！', 'https://picsum.photos/600/400?random=27', '2023-06-18', 5, 1, [
+                        ('https://picsum.photos/800/600?random=27', '街頭突擊，展現舞蹈魅力 - 街頭快閃', 1),
+                        ('https://picsum.photos/800/600?random=271', '街頭突擊，展現舞蹈魅力 - 觀眾互動', 2),
+                    ]),
+                    ('學員練習日常', '舞者們日復一日的堅持與努力，汗水鑄就的精彩！', 'https://picsum.photos/600/400?random=28', '2023-05-10', 6, 1, [
+                        ('https://picsum.photos/800/600?random=28', '舞者們日復一日的堅持與努力 - 練習剪影', 1),
+                        ('https://picsum.photos/800/600?random=281', '舞者們日復一日的堅持與努力 - 汗水與堅持', 2),
+                    ]),
+                ]
+                for alb in default_albums:
+                    cursor.execute("""
+                        INSERT INTO gallery_albums (title, description, cover_image, event_date, sort_order, is_published)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, (alb[0], alb[1], alb[2], alb[3], alb[4], alb[5]))
+                    alb_id = cursor.lastrowid
+                    for p in alb[6]:
+                        cursor.execute("""
+                            INSERT INTO gallery_photos (album_id, image_url, description, sort_order)
+                            VALUES (%s, %s, %s, %s)
+                        """, (alb_id, p[0], p[1], p[2]))
             
+            # 首頁橫幅 (Hero Banners) 表格
+            banners_table = """
+            CREATE TABLE IF NOT EXISTS banners (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                title VARCHAR(255) NOT NULL,
+                subtitle TEXT NULL,
+                badge_text VARCHAR(100) NULL,
+                badge_color VARCHAR(50) DEFAULT 'warning',
+                image_url TEXT NOT NULL,
+                primary_button_text VARCHAR(100) NULL,
+                primary_button_link VARCHAR(255) NULL,
+                primary_button_style VARCHAR(100) DEFAULT 'primary',
+                secondary_button_text VARCHAR(100) NULL,
+                secondary_button_link VARCHAR(255) NULL,
+                secondary_button_style VARCHAR(100) DEFAULT 'outline-light',
+                interval_ms INT DEFAULT 5000,
+                sort_order INT DEFAULT 0,
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            """
+            cursor.execute(banners_table)
+
+            # 插入預設首頁輪播橫幅 (若表格為空)
+            cursor.execute("SELECT COUNT(*) FROM banners")
+            banner_cnt_row = cursor.fetchone()
+            if banner_cnt_row and (banner_cnt_row[0] if isinstance(banner_cnt_row, tuple) else banner_cnt_row.get('COUNT(*)', 0)) == 0:
+                default_banners = [
+                    (
+                        '釋放你的節奏，舞出你的熱情',
+                        '無論是零基礎新手或資深舞者，在 Dance Studio 都能找到最適合你的專屬舞台。',
+                        '✨ 啟動你的舞蹈新生活',
+                        'warning',
+                        'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&w=1920&q=80',
+                        '立即預約課程',
+                        '/schedule',
+                        'primary',
+                        '認識師資團隊',
+                        '/instructors',
+                        'outline-light',
+                        5000,
+                        1,
+                        1
+                    ),
+                    (
+                        '多元舞風體系 × 專業細膩教學',
+                        '流行街舞、K-POP MV、抒情爵士、芭蕾律動，循序漸進拆解每個核心動作。',
+                        '👑 頂尖專業名師陣容',
+                        'primary',
+                        'https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&w=1920&q=80',
+                        '查看本週課表',
+                        '/schedule',
+                        'warning',
+                        '課程收費方案',
+                        '/pricing',
+                        'outline-light',
+                        5000,
+                        2,
+                        1
+                    ),
+                    (
+                        '高規格減震地板與專業環繞音響',
+                        '四大獨立主題練習室，明亮寬敞的空間與貼心休息區，享受最極致的跳舞體驗。',
+                        '🏢 專業國際級練習空間',
+                        'success',
+                        'https://images.unsplash.com/photo-1518609878373-06d740f60d8b?auto=format&fit=crop&w=1920&q=80',
+                        '參觀場地環境',
+                        '/venue',
+                        'light',
+                        '關於我們',
+                        '/about',
+                        'outline-light',
+                        5000,
+                        3,
+                        1
+                    )
+                ]
+                cursor.executemany("""
+                    INSERT INTO banners (
+                        title, subtitle, badge_text, badge_color, image_url,
+                        primary_button_text, primary_button_link, primary_button_style,
+                        secondary_button_text, secondary_button_link, secondary_button_style,
+                        interval_ms, sort_order, is_active
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, default_banners)
+
+            # 各分頁頂部橫幅 (Page Banners) 表格
+            page_banners_table = """
+            CREATE TABLE IF NOT EXISTS page_banners (
+                page_key VARCHAR(50) PRIMARY KEY,
+                page_name VARCHAR(100) NOT NULL,
+                title VARCHAR(255) NOT NULL,
+                subtitle VARCHAR(255) NULL,
+                image_url TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            """
+            cursor.execute(page_banners_table)
+
+            default_page_banners = [
+                ('about', '關於我們', '關於我們 / ABOUT US', '致力於為所有舞蹈愛好者提供最專業、多元的學習體驗', 'https://picsum.photos/1920/500?random=9'),
+                ('history', '品牌沿革', '品牌沿革 / HISTORY', '見證 Dance Studio 歷年來的里程碑與熱血歷程', 'https://picsum.photos/1920/500?random=8'),
+                ('instructors', '師資團隊', '師資團隊 / INSTRUCTORS', '匯聚業界頂尖名師，細膩指導每一步身體律動', 'https://picsum.photos/1920/500?random=14'),
+                ('schedule', '課程時間表', '課程時間表 / SCHEDULE', '彈性多元的時段規劃，全方位探索熱門舞風', 'https://picsum.photos/1920/500?random=36'),
+                ('pricing', '課程價目表', '課程價目表 / PRICING', '透明彈性的收費方案，滿足不同學習階段需求', 'https://picsum.photos/1920/500?random=35'),
+                ('gallery', '活動花絮', '活動花絮 / GALLERY', '回顧學員舞台演出與歡樂練習日常的精彩瞬間', 'https://picsum.photos/1920/500?random=22'),
+                ('venue', '場地租借', '場地租借 / VENUE', '專業避震地板、頂級音響設備，打造最佳跳舞空間', 'https://picsum.photos/1920/500?random=29'),
+                ('faq', '常見問題', '常見問題 / FAQ', '快速解答學員常見疑問，新手安心踏出第一步', 'https://picsum.photos/1920/500?random=33'),
+                ('contact', '聯絡我們', '聯絡我們 / CONTACT', '歡迎預約參觀、諮詢課程或與我們聯繫交流', 'https://picsum.photos/1920/500?random=34')
+            ]
+            for pb in default_page_banners:
+                cursor.execute("""
+                    INSERT IGNORE INTO page_banners (page_key, page_name, title, subtitle, image_url)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, pb)
+
             # 檢查並添加新欄位 (為了向後兼容)
             try:
                 # 檢查 course_schedules 表格是否有 allow_enrollment 欄位
@@ -383,6 +755,70 @@ def init_database_tables():
                     print("正在添加 clock_in_ip 與 clock_out_ip 欄位到 teacher_attendance 表格...")
                     cursor.execute("ALTER TABLE teacher_attendance ADD COLUMN clock_in_ip VARCHAR(50) NULL AFTER clock_out, ADD COLUMN clock_out_ip VARCHAR(50) NULL AFTER clock_in_ip")
                     print("teacher_attendance IP 欄位添加成功")
+
+                # 檢查 students 表格是否有 line_user_id 欄位
+                cursor.execute("SHOW COLUMNS FROM students LIKE 'line_user_id'")
+                if not cursor.fetchone():
+                    print("正在添加 line_user_id 等 LINE 關聯欄位到 students 表格...")
+                    cursor.execute("ALTER TABLE students ADD COLUMN line_user_id VARCHAR(100) UNIQUE NULL COMMENT 'LINE User ID'")
+                    cursor.execute("ALTER TABLE students ADD COLUMN line_display_name VARCHAR(100) NULL COMMENT 'LINE 暱稱'")
+                    cursor.execute("ALTER TABLE students ADD COLUMN line_picture_url VARCHAR(255) NULL COMMENT 'LINE 大頭貼'")
+                    cursor.execute("ALTER TABLE students ADD COLUMN line_linked_at DATETIME NULL COMMENT 'LINE 關聯時間'")
+                    print("students 表格 LINE 欄位添加成功")
+
+                # 檢查 course_schedules 表格是否有 teacher_id 與 is_substitute 欄位
+                cursor.execute("SHOW COLUMNS FROM course_schedules LIKE 'teacher_id'")
+                if not cursor.fetchone():
+                    print("正在添加 teacher_id, is_substitute, substitute_notes 欄位到 course_schedules 表格...")
+                    cursor.execute("ALTER TABLE course_schedules ADD COLUMN teacher_id INT NULL AFTER course_id")
+                    cursor.execute("ALTER TABLE course_schedules ADD COLUMN is_substitute BOOLEAN DEFAULT FALSE AFTER allow_enrollment")
+                    cursor.execute("ALTER TABLE course_schedules ADD COLUMN substitute_notes VARCHAR(255) NULL AFTER is_substitute")
+                    try:
+                        cursor.execute("ALTER TABLE course_schedules ADD CONSTRAINT fk_cs_teacher FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE SET NULL")
+                    except Exception:
+                        pass
+                    print("course_schedules 代課欄位添加成功")
+
+                # 檢查 teacher_attendance 表格是否有 is_substitute 與 original_teacher_id 欄位
+                cursor.execute("SHOW COLUMNS FROM teacher_attendance LIKE 'is_substitute'")
+                if not cursor.fetchone():
+                    print("正在添加 is_substitute 與 original_teacher_id 欄位到 teacher_attendance 表格...")
+                    cursor.execute("ALTER TABLE teacher_attendance ADD COLUMN is_substitute BOOLEAN DEFAULT FALSE AFTER calculated_salary")
+                    cursor.execute("ALTER TABLE teacher_attendance ADD COLUMN original_teacher_id INT NULL AFTER is_substitute")
+                    print("teacher_attendance 代課欄位添加成功")
+
+                ensure_pricing_database_tables(cursor)
+
+                # 檢查 students 表格是否有 monthly_pass_expiry 欄位 (月費與會員年費分開記錄)
+                cursor.execute("SHOW COLUMNS FROM students LIKE 'monthly_pass_expiry'")
+                if not cursor.fetchone():
+                    print("正在添加 monthly_pass_expiry 欄位到 students 表格...")
+                    cursor.execute("ALTER TABLE students ADD COLUMN monthly_pass_expiry DATE NULL COMMENT '月費到期日'")
+                    print("monthly_pass_expiry 欄位添加成功")
+
+                # 檢查 courses 表格是否有 allow_monthly_pass 欄位 (是否適用月費暢跳)
+                cursor.execute("SHOW COLUMNS FROM courses LIKE 'allow_monthly_pass'")
+                if not cursor.fetchone():
+                    print("正在添加 allow_monthly_pass 欄位到 courses 表格...")
+                    cursor.execute("ALTER TABLE courses ADD COLUMN allow_monthly_pass BOOLEAN DEFAULT TRUE COMMENT '是否支援月費暢跳' AFTER price")
+                    print("allow_monthly_pass 欄位添加成功")
+
+                # 檢查 pricing_plans 表格是否有 requires_membership 欄位 (限會員年費才可購買)
+                cursor.execute("SHOW COLUMNS FROM pricing_plans LIKE 'requires_membership'")
+                if not cursor.fetchone():
+                    print("正在添加 requires_membership 欄位到 pricing_plans 表格...")
+                    cursor.execute("ALTER TABLE pricing_plans ADD COLUMN requires_membership BOOLEAN DEFAULT FALSE COMMENT '是否限有效會員年費學員購買' AFTER is_popular")
+                    print("pricing_plans requires_membership 欄位添加成功")
+
+                # 檢查預設 LINE 設定
+                cursor.execute("""
+                INSERT IGNORE INTO system_settings (setting_key, setting_value, description) VALUES
+                ('line_login_enabled', '1', '是否啟用 LINE 快速登入與帳號關聯 (0=關閉, 1=開啟)'),
+                ('line_channel_id', '', 'LINE Login Channel ID'),
+                ('line_channel_secret', '', 'LINE Login Channel Secret'),
+                ('line_official_id', '', '工作室 LINE 官方帳號 ID'),
+                ('line_official_url', '', '工作室 LINE 官方加好友連結')
+                """)
                     
             except mysql.connector.Error as err:
                 print(f"添加欄位時發生錯誤: {err}")
@@ -425,7 +861,7 @@ class Enrollment(Resource):
                 cursor = connection.cursor(dictionary=True, buffered=True)
                 
                 # 先查詢學生是否存在並取得剩餘堂數
-                student_query = "SELECT id, name, remaining_classes FROM students WHERE name = %s"
+                student_query = "SELECT id, name, remaining_classes, monthly_pass_expiry, membership_expiry FROM students WHERE name = %s"
                 cursor.execute(student_query, (student_name,))
                 student = cursor.fetchone()
                 
@@ -442,16 +878,20 @@ class Enrollment(Resource):
                     # 查詢課程價格和課程人數上限及課程資訊
                     price_query = """
                     SELECT c.id as course_id, c.name as course_name, c.price, c.max_students as course_capacity,
-                           c.level, s.name as dance_type, t.name as teacher_name,
+                           c.allow_monthly_pass,
+                           c.level, s.name as dance_type, COALESCE(sub_t.name, t.name) as teacher_name,
                            cs.schedule_date, cs.day_of_week, cs.start_time, cs.end_time, cs.allow_enrollment,
                            COUNT(e.id) as current_enrollment
                     FROM course_schedules cs 
                     JOIN courses c ON cs.course_id = c.id 
                     LEFT JOIN styles s ON c.style_id = s.id
                     LEFT JOIN teachers t ON c.teacher_id = t.id
-                    LEFT JOIN enrollments e ON cs.id = e.schedule_id AND e.status = 'confirmed'
-                    WHERE cs.id = %s
-                    GROUP BY cs.id, c.id, c.name, c.price, c.max_students, c.level, s.name, t.name, 
+                    LEFT JOIN teachers sub_t ON cs.teacher_id = sub_t.id
+
+                LEFT JOIN enrollments e ON cs.id = e.schedule_id AND e.status = 'confirmed'
+
+                WHERE cs.id = %s
+                    GROUP BY cs.id, c.id, c.name, c.price, c.max_students, c.allow_monthly_pass, c.level, s.name, t.name, sub_t.name, 
                              cs.schedule_date, cs.day_of_week, cs.start_time, cs.end_time, cs.allow_enrollment
                     """
                     cursor.execute(price_query, (schedule_id,))
@@ -523,25 +963,57 @@ class Enrollment(Resource):
                 if current_enrollment >= course_capacity:
                     return {'error': f'很抱歉，此課程報名人數已滿（{current_enrollment}/{course_capacity}）'}, 400
                 
-                # 檢查剩餘堂數
+                # 檢查學員是否有有效「月費暢跳」方案資格
+                has_valid_monthly_pass = False
+                monthly_pass_exp = student.get('monthly_pass_expiry')
+                if monthly_pass_exp:
+                    if isinstance(monthly_pass_exp, str):
+                        try:
+                            monthly_pass_exp = datetime.strptime(monthly_pass_exp[:10], '%Y-%m-%d').date()
+                        except Exception:
+                            monthly_pass_exp = None
+                    target_date = sched_date_val if 'sched_date_val' in locals() and sched_date_val else datetime.now().date()
+                    if monthly_pass_exp and monthly_pass_exp >= target_date:
+                        has_valid_monthly_pass = True
+
+                # 檢查課程是否支援月費暢跳 (預設為 True)
+                course_allows_monthly = True
+                if schedule_id and 'price_result' in locals() and price_result:
+                    raw_allow = price_result.get('allow_monthly_pass')
+                    if raw_allow is not None and str(raw_allow) in ('0', 'False', 'false'):
+                        course_allows_monthly = False
+
+                is_monthly_pass_booking = has_valid_monthly_pass and course_allows_monthly
+
+                # 剩餘堂數與扣堂判斷
                 remaining_classes = student['remaining_classes'] or 0
-                if remaining_classes < course_price:
-                    return {'error': f'您的剩餘堂數不足（目前剩餘：{remaining_classes}堂，需要：{course_price}堂），請至櫃檯儲值後再進行報名'}, 400
+                if is_monthly_pass_booking:
+                    deducted_classes = 0
+                    new_remaining_classes = remaining_classes
+                else:
+                    deducted_classes = course_price
+                    if remaining_classes < deducted_classes:
+                        return {'error': f'您的剩餘堂數不足（目前剩餘：{remaining_classes}堂，需要：{deducted_classes}堂），請至櫃檯儲值後再進行報名'}, 400
+                    new_remaining_classes = remaining_classes - deducted_classes
+
                 
                 # 開始事務
                 cursor.execute("START TRANSACTION")
                 
                 # 扣除對應堂數
-                new_remaining_classes = remaining_classes - course_price
-                update_query = "UPDATE students SET remaining_classes = %s WHERE id = %s"
-                cursor.execute(update_query, (new_remaining_classes, student['id']))
+                if deducted_classes > 0:
+    
+                    cursor.execute("UPDATE students SET remaining_classes = %s WHERE id = %s", (new_remaining_classes, student['id']))
+                # 扣除完成
+
+
                 
                 # 插入報名記錄
                 insert_query = """
                 INSERT INTO enrollments 
                 (student_id, course_id, schedule_id, student_name, lesson_name, lesson_time, lesson_day, 
-                 lesson_teacher, lesson_level, lesson_type, deducted_classes)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 lesson_teacher, lesson_level, lesson_type, deducted_classes) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                -- old_values_ignored
                 """
                 
                 values = (
@@ -555,7 +1027,7 @@ class Enrollment(Resource):
                     lesson.get('teacher', ''),
                     lesson.get('level', ''),
                     lesson.get('type', ''),
-                    course_price  # 記錄扣除的堂數
+                    deducted_classes  # 記錄扣除的堂數 (若為月費則為 0)
                 )
                 
                 cursor.execute(insert_query, values)
@@ -578,14 +1050,15 @@ class Enrollment(Resource):
                 
                 return {
                     'success': True,
-                    'message': '報名成功！',
+                    'message': '報名成功！（已套用月費暢跳，免扣堂數）' if is_monthly_pass_booking else '報名成功！',
                     'enrollment': {
                         'id': enrollment_id,
                         'studentName': student_name,
                         'lesson': lesson,
                         'enrollmentTime': datetime.now().isoformat(),
                         'remainingClasses': new_remaining_classes,
-                        'usedClasses': course_price
+                        'usedClasses': deducted_classes,
+                        'isMonthlyPass': is_monthly_pass_booking
                     }
                 }, 201
                 
@@ -646,10 +1119,12 @@ def format_student_info(student):
         return None
     res = dict(student)
     res.pop('password_hash', None)
-    for field in ['created_at', 'updated_at']:
+    if not res.get('membership_expiry') and res.get('expiry_date'):
+        res['membership_expiry'] = res['expiry_date']
+    for field in ['created_at', 'updated_at', 'line_linked_at']:
         if res.get(field) and isinstance(res[field], datetime):
             res[field] = res[field].isoformat()
-    for field in ['membership_expiry', 'date_of_birth']:
+    for field in ['membership_expiry', 'monthly_pass_expiry', 'date_of_birth', 'expiry_date']:
         if res.get(field) and isinstance(res[field], date):
             res[field] = res[field].isoformat()
     return res
@@ -711,12 +1186,11 @@ class Students(Resource):
                 return {'error': '資料庫連接失敗'}, 500
             
             try:
-                cursor = connection.cursor()
+                cursor = connection.cursor(buffered=True)
                 
                 insert_query = """
                 INSERT INTO students 
-                (name, email, phone, date_of_birth, emergency_contact, emergency_phone, medical_notes, remaining_classes, membership_expiry)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (name, email, phone, date_of_birth, emergency_contact, emergency_phone, bank_last_5, medical_notes, remaining_classes, membership_expiry, monthly_pass_expiry) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """
                 
                 values = (
@@ -726,9 +1200,11 @@ class Students(Resource):
                     data.get('date_of_birth'),
                     data.get('emergency_contact'),
                     data.get('emergency_phone'),
+                    data.get('bank_last_5') or None,
                     data.get('medical_notes'),
                     data.get('remaining_classes', 0),
-                    data.get('membership_expiry')
+                    data.get('membership_expiry') or None,
+                    data.get('monthly_pass_expiry') or None,
                 )
                 
                 cursor.execute(insert_query, values)
@@ -783,8 +1259,13 @@ class Teachers(Resource):
                 if teacher_id:
                     query += " AND t.id = %s"
                     params.append(teacher_id)
+
+                is_featured = request.args.get('is_featured')
+                if is_featured is not None:
+                    query += " AND t.is_featured = %s"
+                    params.append(1 if str(is_featured).lower() in ['1', 'true'] else 0)
                 
-                query += " ORDER BY t.created_at DESC"
+                query += " ORDER BY t.is_featured DESC, t.created_at DESC"
                 
                 cursor.execute(query, params)
                 teachers = cursor.fetchall()
@@ -818,7 +1299,7 @@ class Teachers(Resource):
                 for teacher in teachers:
                     if teacher.get('hourly_rate'):
                         teacher['hourly_rate'] = str(teacher['hourly_rate'])
-                    for field in ['created_at', 'updated_at']:
+                    for field in ['created_at', 'updated_at', 'line_linked_at']:
                         if teacher.get(field) and isinstance(teacher[field], datetime):
                             teacher[field] = teacher[field].isoformat()
                 
@@ -852,23 +1333,25 @@ class Teachers(Resource):
                 return {'error': '資料庫連接失敗'}, 500
             
             try:
-                cursor = connection.cursor()
+                cursor = connection.cursor(buffered=True)
                 
-                # 插入老師基本資料 (包含銀行帳號、大頭貼)
+                # 插入老師基本資料 (包含銀行帳號、大頭貼、主打星與年資)
                 insert_teacher_query = """
                 INSERT INTO teachers 
-                (name, email, phone, bio, hourly_rate, bank_account, avatar_url)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                (name, email, phone, experience_years, bio, hourly_rate, bank_account, avatar_url, is_featured) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                -- old_values_ignored
                 """
                 
                 teacher_values = (
                     data.get('name'),
                     data.get('email'),
                     data.get('phone'),
+                    data.get('experience_years'),
                     data.get('bio'),
                     data.get('hourly_rate'),
                     data.get('bank_account'),
-                    data.get('avatar_url')
+                    data.get('avatar_url'),
+                    1 if data.get('is_featured') else 0
                 )
                 
                 cursor.execute(insert_teacher_query, teacher_values)
@@ -954,7 +1437,7 @@ class Courses(Resource):
                         if int_col in course and course[int_col] is not None:
                             course[int_col] = int(course[int_col])
                     # 轉換 datetime 物件為 ISO 格式字串
-                    for field in ['created_at', 'updated_at']:
+                    for field in ['created_at', 'updated_at', 'line_linked_at']:
                         if course.get(field) and isinstance(course[field], datetime):
                             course[field] = course[field].isoformat()
                 
@@ -988,13 +1471,13 @@ class Courses(Resource):
                 return {'error': '資料庫連接失敗'}, 500
             
             try:
-                cursor = connection.cursor()
+                cursor = connection.cursor(buffered=True)
                 
                 insert_query = """
                 INSERT INTO courses 
-                (name, description, level, style_id, duration_minutes, max_students, price, teacher_id,
+                (name, description, level, style_id, duration_minutes, max_students, price, allow_monthly_pass, teacher_id,
                  base_salary, low_student_threshold, low_student_salary, extra_student_threshold, extra_student_fee, salary_cap)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """
                 
                 values = (
@@ -1005,6 +1488,7 @@ class Courses(Resource):
                     data.get('duration_minutes', 60),
                     data.get('max_students', 15),
                     data.get('price'),
+                    1 if data.get('allow_monthly_pass', True) else 0,
                     data.get('teacher_id'),
                     float(data.get('base_salary') or 0),
                     int(data.get('low_student_threshold') or 0),
@@ -1054,9 +1538,16 @@ class CourseSchedules(Resource):
                 # 基本查詢語句，包含報名人數和動態報名狀態
                 query = """
                 SELECT cs.*, c.name as course_name, c.level, c.price as course_price, c.max_students as course_capacity,
-                       c.teacher_id as teacher_id,
+                       c.allow_monthly_pass,
+                       c.teacher_id as course_teacher_id,
+                       COALESCE(cs.teacher_id, c.teacher_id) as teacher_id,
+                       COALESCE(sub_t.name, t.name) as teacher_name,
+                       COALESCE(sub_t.avatar_url, t.avatar_url) as teacher_avatar_url,
+                       t.id as original_teacher_id,
+                       t.name as original_teacher_name,
+                       CASE WHEN cs.is_substitute = 1 OR (cs.teacher_id IS NOT NULL AND cs.teacher_id != c.teacher_id) THEN 1 ELSE 0 END as is_substitute,
                        c.base_salary, c.low_student_threshold, c.low_student_salary, c.extra_student_threshold, c.extra_student_fee, c.salary_cap,
-                       s.name as style_name, t.name as teacher_name, t.avatar_url as teacher_avatar_url, r.name as room_name, 
+                       s.name as style_name, r.name as room_name, 
                        r.capacity as room_capacity,
                        COUNT(e.id) as enrollment_count,
                        CASE 
@@ -1074,6 +1565,7 @@ class CourseSchedules(Resource):
                 LEFT JOIN teachers t ON c.teacher_id = t.id
                 LEFT JOIN styles s ON c.style_id = s.id
                 LEFT JOIN rooms r ON cs.room_id = r.id
+                LEFT JOIN teachers sub_t ON cs.teacher_id = sub_t.id
                 LEFT JOIN enrollments e ON cs.id = e.schedule_id AND e.status = 'confirmed'
                 WHERE cs.is_active = TRUE
                 """
@@ -1092,7 +1584,16 @@ class CourseSchedules(Resource):
                 cursor.execute(query, params)
                 schedules = cursor.fetchall()
 
-                # 轉換時間物件為字串
+                # 列表時間物件與 Decimal 序列化轉換
+                from decimal import Decimal
+                for _single_sched in (schedules if 'schedules' in locals() else [schedule]):
+                    for _k, _v in list(_single_sched.items()):
+                        if isinstance(_v, Decimal):
+                            _single_sched[_k] = float(_v)
+                        elif isinstance(_v, (datetime, date)):
+                            _single_sched[_k] = _v.isoformat()
+                        elif isinstance(_v, timedelta):
+                            _single_sched[_k] = str(_v)
                 for schedule in schedules:
                     if schedule.get('schedule_date'):
                         schedule['schedule_date'] = str(schedule['schedule_date'])
@@ -1144,7 +1645,7 @@ class CourseSchedules(Resource):
                 return {'error': '資料庫連接失敗'}, 500
             
             try:
-                cursor = connection.cursor()
+                cursor = connection.cursor(buffered=True)
                 
                 # 從日期推算星期幾
                 from datetime import datetime
@@ -1153,8 +1654,8 @@ class CourseSchedules(Resource):
                 
                 insert_query = """
                 INSERT INTO course_schedules 
-                (course_id, schedule_date, day_of_week, start_time, end_time, room_id, is_active, allow_enrollment)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                (course_id, schedule_date, day_of_week, start_time, end_time, room_id, is_active, allow_enrollment, teacher_id, is_substitute)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """
                 
                 values = (
@@ -1165,7 +1666,9 @@ class CourseSchedules(Resource):
                     data.get('end_time'),
                     data.get('room_id'),
                     data.get('is_active', True),
-                    data.get('allow_enrollment', True)
+                    data.get('allow_enrollment', True),
+                    data.get('teacher_id') or None,
+                    1 if data.get('is_substitute') else 0
                 )
                 
                 cursor.execute(insert_query, values)
@@ -1239,7 +1742,7 @@ class Student(Resource):
                 return {'error': '資料庫連接失敗'}, 500
             
             try:
-                cursor = connection.cursor()
+                cursor = connection.cursor(buffered=True)
                 
                 # 先確認學生是否存在
                 cursor.execute("SELECT id FROM students WHERE id = %s", (student_id,))
@@ -1250,8 +1753,8 @@ class Student(Resource):
                 values = []
                 
                 for key, value in data.items():
-                    if key in ['name', 'email', 'phone', 'date_of_birth', 'emergency_contact', 'emergency_phone', 'medical_notes', 'remaining_classes', 'membership_expiry']:
-                        if key in ['date_of_birth', 'membership_expiry'] and (value == '' or value == '1911-01-01'):
+                    if key in ['name', 'email', 'phone', 'date_of_birth', 'emergency_contact', 'emergency_phone', 'medical_notes', 'remaining_classes', 'membership_expiry', 'monthly_pass_expiry', 'bank_last_5', 'line_user_id', 'line_display_name', 'line_picture_url']:
+                        if key in ['date_of_birth', 'membership_expiry', 'monthly_pass_expiry'] and (value == '' or value == '1911-01-01'):
                             value = None
                         update_fields.append(f"{key} = %s")
                         values.append(value)
@@ -1289,7 +1792,7 @@ class Student(Resource):
                 return {'error': '資料庫連接失敗'}, 500
             
             try:
-                cursor = connection.cursor()
+                cursor = connection.cursor(buffered=True)
                 cursor.execute("DELETE FROM students WHERE id = %s", (student_id,))
                 connection.commit()
                 
@@ -1347,7 +1850,7 @@ class Teacher(Resource):
                 # 轉換 datetime 和 Decimal 物件為字串
                 if teacher.get('hourly_rate'):
                     teacher['hourly_rate'] = str(teacher['hourly_rate'])
-                for field in ['created_at', 'updated_at']:
+                for field in ['created_at', 'updated_at', 'line_linked_at']:
                     if teacher.get(field) and isinstance(teacher[field], datetime):
                         teacher[field] = teacher[field].isoformat()
                 
@@ -1380,13 +1883,13 @@ class Teacher(Resource):
                 return {'error': '資料庫連接失敗'}, 500
             
             try:
-                cursor = connection.cursor()
+                cursor = connection.cursor(buffered=True)
                 
                 update_fields = []
                 values = []
                 
                 for key, value in data.items():
-                    if key in ['name', 'email', 'phone', 'bio', 'hourly_rate', 'bank_account', 'avatar_url']:
+                    if key in ['name', 'email', 'phone', 'experience_years', 'bio', 'hourly_rate', 'bank_account', 'avatar_url', 'is_featured']:
                         update_fields.append(f"{key} = %s")
                         values.append(value)
                 
@@ -1458,7 +1961,7 @@ class Teacher(Resource):
                 return {'error': '資料庫連接失敗'}, 500
             
             try:
-                cursor = connection.cursor()
+                cursor = connection.cursor(buffered=True)
                 cursor.execute("DELETE FROM teachers WHERE id = %s", (teacher_id,))
                 connection.commit()
                 
@@ -1578,7 +2081,7 @@ class Course(Resource):
                 for int_col in ['extra_student_threshold', 'low_student_threshold']:
                     if int_col in course and course[int_col] is not None:
                         course[int_col] = int(course[int_col])
-                for field in ['created_at', 'updated_at']:
+                for field in ['created_at', 'updated_at', 'line_linked_at']:
                     if course.get(field) and isinstance(course[field], datetime):
                         course[field] = course[field].isoformat()
                 
@@ -1611,13 +2114,13 @@ class Course(Resource):
                 return {'error': '資料庫連接失敗'}, 500
             
             try:
-                cursor = connection.cursor()
+                cursor = connection.cursor(buffered=True)
                 
                 update_fields = []
                 values = []
                 
                 for key, value in data.items():
-                    if key in ['name', 'description', 'level', 'style_id', 'duration_minutes', 'max_students', 'price', 'teacher_id',
+                    if key in ['name', 'description', 'level', 'style_id', 'duration_minutes', 'max_students', 'price', 'allow_monthly_pass', 'teacher_id',
                                'base_salary', 'low_student_threshold', 'low_student_salary', 'extra_student_threshold', 'extra_student_fee', 'salary_cap']:
                         update_fields.append(f"{key} = %s")
                         values.append(value)
@@ -1660,7 +2163,7 @@ class Course(Resource):
                 return {'error': '資料庫連接失敗'}, 500
             
             try:
-                cursor = connection.cursor()
+                cursor = connection.cursor(buffered=True)
                 cursor.execute("DELETE FROM courses WHERE id = %s", (course_id,))
                 connection.commit()
                 
@@ -1705,16 +2208,24 @@ class CourseSchedule(Resource):
                 cursor = connection.cursor(dictionary=True)
                 query = """
                 SELECT cs.*, c.name as course_name, c.level, c.price as course_price, c.max_students as course_capacity,
-                       c.teacher_id as teacher_id,
+                       c.allow_monthly_pass,
+                       c.teacher_id as course_teacher_id,
+                       COALESCE(cs.teacher_id, c.teacher_id) as teacher_id,
+                       COALESCE(sub_t.name, t.name) as teacher_name,
+                       COALESCE(sub_t.avatar_url, t.avatar_url) as teacher_avatar_url,
+                       t.id as original_teacher_id,
+                       t.name as original_teacher_name,
+                       CASE WHEN cs.is_substitute = 1 OR (cs.teacher_id IS NOT NULL AND cs.teacher_id != c.teacher_id) THEN 1 ELSE 0 END as is_substitute,
                        c.base_salary, c.low_student_threshold, c.low_student_salary, c.extra_student_threshold, c.extra_student_fee, c.salary_cap,
                        s.name as style_name, 
-                       t.name as teacher_name, t.avatar_url as teacher_avatar_url, r.name as room_name, 
+                       r.name as room_name, 
                        r.capacity as room_capacity
                 FROM course_schedules cs
                 JOIN courses c ON cs.course_id = c.id
                 LEFT JOIN teachers t ON c.teacher_id = t.id
                 LEFT JOIN styles s ON c.style_id = s.id
                 LEFT JOIN rooms r ON cs.room_id = r.id
+                LEFT JOIN teachers sub_t ON cs.teacher_id = sub_t.id
                 WHERE cs.id = %s
                 """
                 cursor.execute(query, (schedule_id,))
@@ -1723,7 +2234,16 @@ class CourseSchedule(Resource):
                 if not schedule:
                     return {'error': '課程時間表未找到'}, 404
                 
-                # 轉換時間物件為字串
+                # 列表時間物件與 Decimal 序列化轉換
+                from decimal import Decimal
+                for _single_sched in (schedules if 'schedules' in locals() else [schedule]):
+                    for _k, _v in list(_single_sched.items()):
+                        if isinstance(_v, Decimal):
+                            _single_sched[_k] = float(_v)
+                        elif isinstance(_v, (datetime, date)):
+                            _single_sched[_k] = _v.isoformat()
+                        elif isinstance(_v, timedelta):
+                            _single_sched[_k] = str(_v)
                 if schedule.get('schedule_date'):
                     schedule['schedule_date'] = str(schedule['schedule_date'])
                 if schedule.get('start_time'):
@@ -1762,13 +2282,13 @@ class CourseSchedule(Resource):
                 return {'error': '資料庫連接失敗'}, 500
             
             try:
-                cursor = connection.cursor()
+                cursor = connection.cursor(buffered=True)
                 
                 update_fields = []
                 values = []
                 
                 for key, value in data.items():
-                    if key in ['course_id', 'schedule_date', 'start_time', 'end_time', 'room_id', 'is_active', 'allow_enrollment']:
+                    if key in ['course_id', 'schedule_date', 'start_time', 'end_time', 'room_id', 'is_active', 'allow_enrollment', 'teacher_id', 'is_substitute', 'substitute_notes']:
                         update_fields.append(f"{key} = %s")
                         values.append(value)
                 
@@ -1819,7 +2339,7 @@ class CourseSchedule(Resource):
                 return {'error': '資料庫連接失敗'}, 500
             
             try:
-                cursor = connection.cursor()
+                cursor = connection.cursor(buffered=True)
                 cursor.execute("DELETE FROM course_schedules WHERE id = %s", (schedule_id,))
                 connection.commit()
                 
@@ -1887,7 +2407,7 @@ class Styles(Resource):
                 return {'error': '資料庫連接失敗'}, 500
             
             try:
-                cursor = connection.cursor()
+                cursor = connection.cursor(buffered=True)
                 
                 insert_query = """
                 INSERT INTO styles (name, description)
@@ -1968,7 +2488,7 @@ class Style(Resource):
                 return {'error': '資料庫連接失敗'}, 500
             
             try:
-                cursor = connection.cursor()
+                cursor = connection.cursor(buffered=True)
                 
                 update_fields = []
                 values = []
@@ -2014,7 +2534,7 @@ class Style(Resource):
                 return {'error': '資料庫連接失敗'}, 500
             
             try:
-                cursor = connection.cursor()
+                cursor = connection.cursor(buffered=True)
                 cursor.execute("DELETE FROM styles WHERE id = %s", (style_id,))
                 connection.commit()
                 
@@ -2049,7 +2569,7 @@ class Rooms(Resource):
             
             try:
                 cursor = connection.cursor(dictionary=True)
-                cursor.execute("SELECT * FROM rooms ORDER BY id DESC")
+                cursor.execute("SELECT * FROM rooms ORDER BY id ASC")
                 rooms = cursor.fetchall()
 
                 # 轉換 Decimal 物件為字串
@@ -2057,7 +2577,7 @@ class Rooms(Resource):
                     if room.get('hourly_rate'):
                         room['hourly_rate'] = str(room['hourly_rate'])
                     # 轉換 datetime 物件為 ISO 格式字串
-                    for field in ['created_at', 'updated_at']:
+                    for field in ['created_at', 'updated_at', 'line_linked_at']:
                         if room.get(field) and isinstance(room[field], datetime):
                             room[field] = room[field].isoformat()
                 
@@ -2091,11 +2611,11 @@ class Rooms(Resource):
                 return {'error': '資料庫連接失敗'}, 500
             
             try:
-                cursor = connection.cursor()
+                cursor = connection.cursor(buffered=True)
                 
                 insert_query = """
-                INSERT INTO rooms (name, capacity, equipment, description, hourly_rate, is_available)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO rooms (name, capacity, equipment, description, image_url, hourly_rate, is_available)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """
                 
                 values = (
@@ -2103,6 +2623,7 @@ class Rooms(Resource):
                     data.get('capacity'),
                     data.get('equipment'),
                     data.get('description'),
+                    data.get('image_url'),
                     data.get('hourly_rate'),
                     data.get('is_available', True)
                 )
@@ -2150,7 +2671,7 @@ class Room(Resource):
                 # 轉換 Decimal 與 datetime
                 if room.get('hourly_rate') is not None:
                     room['hourly_rate'] = str(room['hourly_rate'])
-                for field in ['created_at', 'updated_at']:
+                for field in ['created_at', 'updated_at', 'line_linked_at']:
                     if room.get(field) and isinstance(room[field], datetime):
                         room[field] = room[field].isoformat()
                 
@@ -2183,13 +2704,13 @@ class Room(Resource):
                 return {'error': '資料庫連接失敗'}, 500
             
             try:
-                cursor = connection.cursor()
+                cursor = connection.cursor(buffered=True)
                 
                 update_fields = []
                 values = []
                 
                 for key, value in data.items():
-                    if key in ['name', 'capacity', 'equipment', 'description', 'hourly_rate', 'is_available']:
+                    if key in ['name', 'capacity', 'equipment', 'description', 'image_url', 'hourly_rate', 'is_available']:
                         update_fields.append(f"{key} = %s")
                         values.append(value)
                 
@@ -2229,7 +2750,7 @@ class Room(Resource):
                 return {'error': '資料庫連接失敗'}, 500
             
             try:
-                cursor = connection.cursor()
+                cursor = connection.cursor(buffered=True)
                 cursor.execute("DELETE FROM rooms WHERE id = %s", (room_id,))
                 connection.commit()
                 
@@ -2295,6 +2816,7 @@ class ScheduleEnrollments(Resource):
                 LEFT JOIN teachers t ON c.teacher_id = t.id
                 LEFT JOIN rooms r ON cs.room_id = r.id
                 LEFT JOIN enrollments e ON cs.id = e.schedule_id
+                LEFT JOIN teachers sub_t ON cs.teacher_id = sub_t.id
                 WHERE cs.id = %s AND cs.is_active = TRUE
                 ORDER BY e.enrollment_time ASC
                 """
@@ -2397,6 +2919,7 @@ class ScheduleEnrollments(Resource):
                 JOIN courses c ON cs.course_id = c.id
                 LEFT JOIN styles s ON c.style_id = s.id
                 LEFT JOIN teachers t ON c.teacher_id = t.id
+                LEFT JOIN teachers sub_t ON cs.teacher_id = sub_t.id
                 WHERE cs.id = %s AND cs.is_active = TRUE
                 """
                 cursor.execute(schedule_query, (schedule_id,))
@@ -2873,8 +3396,8 @@ class StudentRegister(Resource):
                 
                 insert_query = """
                 INSERT INTO students 
-                (name, phone, email, password_hash, remaining_classes, membership_expiry, date_of_birth, emergency_contact, emergency_phone)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (name, phone, email, password_hash, remaining_classes, membership_expiry, date_of_birth, emergency_contact, emergency_phone) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                -- old_values_ignored
                 """
                 values = (
                     name,
@@ -2914,6 +3437,540 @@ api.add_resource(StudentRegister, '/api/student/register')
 api.add_resource(StudentChangePassword, '/api/student/change-password')
 api.add_resource(StudentProfile, '/api/student/profile/<int:student_id>')
 api.add_resource(StudentEnrollments, '/api/student/<int:student_id>/enrollments')
+
+# ==========================================
+# 會員關聯 LINE 與 LINE 快速登入 API
+# ==========================================
+
+def get_line_system_settings(cursor):
+    """查詢系統設定中的 LINE 相關參數"""
+    cursor.execute("""
+    SELECT setting_key, setting_value FROM system_settings 
+    WHERE setting_key IN ('line_login_enabled', 'line_channel_id', 'line_channel_secret', 'line_official_id', 'line_official_url')
+    """)
+    rows = cursor.fetchall()
+    settings = {
+        'line_login_enabled': '1',
+        'line_channel_id': '',
+        'line_channel_secret': '',
+        'line_official_id': '',
+        'line_official_url': ''
+    }
+    for r in rows:
+        settings[r['setting_key']] = r['setting_value'] or ''
+    return settings
+
+def exchange_line_token(channel_id, channel_secret, code, redirect_uri):
+    """向 LINE OAuth Token 端點換取 Access Token"""
+    token_url = "https://api.line.me/oauth2/v2.1/token"
+    data = urllib.parse.urlencode({
+        'grant_type': 'authorization_code',
+        'code': code,
+        'redirect_uri': redirect_uri,
+        'client_id': channel_id,
+        'client_secret': channel_secret
+    }).encode('utf-8')
+    req = urllib.request.Request(token_url, data=data, headers={
+        'Content-Type': 'application/x-www-form-urlencoded'
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode('utf-8')), None
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode('utf-8')
+        try:
+            err_json = json.loads(err_body)
+            err_desc = err_json.get('error_description') or err_json.get('error') or str(e)
+        except Exception:
+            err_desc = err_body or str(e)
+        return None, f"LINE 授權 Token 換取失敗: {err_desc}"
+    except Exception as e:
+        return None, f"連接 LINE 伺服器失敗: {str(e)}"
+
+def get_line_user_profile(access_token):
+    """向 LINE Profile API 取得用戶個人資訊"""
+    profile_url = "https://api.line.me/v2/profile"
+    req = urllib.request.Request(profile_url, headers={
+        'Authorization': f'Bearer {access_token}'
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode('utf-8')), None
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode('utf-8')
+        return None, f"取得 LINE 用戶個人資料失敗: {err_body}"
+    except Exception as e:
+        return None, f"取得 LINE 資料失敗: {str(e)}"
+
+class LinePublicConfigResource(Resource):
+    def get(self):
+        """前台取得 LINE 相關公開設定 (用於顯示按鈕與好友連結)"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                s = get_line_system_settings(cursor)
+                return {
+                    'success': True,
+                    'enabled': s['line_login_enabled'] == '1',
+                    'has_channel_id': bool(s['line_channel_id'].strip()),
+                    'channel_id': s['line_channel_id'].strip(),
+                    'official_id': s['line_official_id'].strip(),
+                    'official_url': s['line_official_url'].strip()
+                }, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'取得 LINE 設定失敗: {str(e)}'}, 500
+
+class LineAuthUrlResource(Resource):
+    def get(self):
+        """產生 LINE OAuth 授權登入 / 綁定跳轉 URL"""
+        redirect_uri = request.args.get('redirect_uri')
+        state = request.args.get('state') or 'login'
+        if not redirect_uri:
+            return {'error': '缺少 redirect_uri 參數'}, 400
+
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                s = get_line_system_settings(cursor)
+                channel_id = s.get('line_channel_id', '').strip()
+                if not channel_id:
+                    return {
+                        'success': False,
+                        'configured': False,
+                        'message': '系統尚未設定 LINE Login Channel ID，請由管理後台填寫或使用手動/模擬關聯模式'
+                    }, 200
+
+                encoded_redirect = urllib.parse.quote(redirect_uri, safe='')
+                encoded_state = urllib.parse.quote(state, safe='')
+                auth_url = (
+                    f"https://access.line.me/oauth2/v2.1/authorize?"
+                    f"response_type=code&client_id={channel_id}&redirect_uri={encoded_redirect}&"
+                    f"state={encoded_state}&scope=profile%20openid"
+                )
+                return {
+                    'success': True,
+                    'configured': True,
+                    'auth_url': auth_url
+                }, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'產生 LINE 授權網址失敗: {str(e)}'}, 500
+
+class LineCallbackResource(Resource):
+    def post(self):
+        """
+        處理 LINE Login 授權回傳 code:
+        - 1. 向 LINE 換取 Token 與 Profile
+        - 2. 若為綁定模式 (帶有 student_id 或 state 為 bind:xxx)，將 LINE ID 綁定至該學員
+        - 3. 若為登入模式，依 line_user_id 查詢學員；若查無關聯學員，則回傳 need_link 引導綁定
+        """
+        try:
+            data = request.get_json() or {}
+            code = (data.get('code') or '').strip()
+            redirect_uri = (data.get('redirect_uri') or '').strip()
+            state = (data.get('state') or '').strip()
+            student_id = data.get('student_id')
+
+            if not code or not redirect_uri:
+                return {'error': '缺少必要參數 (code, redirect_uri)'}, 400
+
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+
+            try:
+                cursor = connection.cursor(dictionary=True)
+                settings = get_line_system_settings(cursor)
+                channel_id = settings['line_channel_id'].strip()
+                channel_secret = settings['line_channel_secret'].strip()
+
+                if not channel_id or not channel_secret:
+                    return {'error': '系統尚未完整設定 LINE Login 頻道資訊 (Channel ID / Secret)'}, 400
+
+                # 換取 Token
+                token_res, err = exchange_line_token(channel_id, channel_secret, code, redirect_uri)
+                if err:
+                    return {'error': err}, 400
+
+                access_token = token_res.get('access_token')
+                if not access_token:
+                    return {'error': '無法取得 LINE Access Token'}, 400
+
+                # 取得 LINE 個人資料
+                profile_res, err = get_line_user_profile(access_token)
+                if err:
+                    return {'error': err}, 400
+
+                line_user_id = profile_res.get('userId')
+                line_display_name = profile_res.get('displayName') or 'LINE 會員'
+                line_picture_url = profile_res.get('pictureUrl')
+
+                if not line_user_id:
+                    return {'error': '未能從 LINE 取得用戶唯一識別碼 (userId)'}, 400
+
+                # 解析 state 判斷是否為綁定模式
+                target_student_id = student_id
+                if not target_student_id and state.startswith('bind:'):
+                    parts = state.split(':')
+                    if len(parts) >= 2 and parts[1].isdigit():
+                        target_student_id = int(parts[1])
+
+                # 模式 A: 綁定模式 (已登入學員綁定 LINE)
+                if target_student_id:
+                    # 檢查該 LINE 帳號是否已被其他學員綁定
+                    cursor.execute("SELECT id, name FROM students WHERE line_user_id = %s AND id != %s", (line_user_id, target_student_id))
+                    conflict = cursor.fetchone()
+                    if conflict:
+                        return {'error': f'此 LINE 帳號已與學員「{conflict["name"]}」關聯，無法重複關聯！如需變更請先解除原帳號綁定。'}, 400
+
+                    # 執行關聯更新
+                    cursor.execute("""
+                    UPDATE students 
+                    SET line_user_id = %s, line_display_name = %s, line_picture_url = %s, line_linked_at = NOW()
+                    WHERE id = %s
+                    """, (line_user_id, line_display_name, line_picture_url, target_student_id))
+                    connection.commit()
+
+                    cursor.execute("SELECT * FROM students WHERE id = %s", (target_student_id,))
+                    updated_student = cursor.fetchone()
+                    return {
+                        'success': True,
+                        'action': 'bound',
+                        'message': f'成功關聯 LINE 帳號「{line_display_name}」！',
+                        'student': format_student_info(updated_student)
+                    }, 200
+
+                # 模式 B: LINE 登入模式
+                cursor.execute("SELECT * FROM students WHERE line_user_id = %s", (line_user_id,))
+                matched_student = cursor.fetchone()
+
+                if matched_student:
+                    # 更新最新 LINE 暱稱與頭貼 (保持同步)
+                    cursor.execute("""
+                    UPDATE students 
+                    SET line_display_name = %s, line_picture_url = %s
+                    WHERE id = %s
+                    """, (line_display_name, line_picture_url, matched_student['id']))
+                    connection.commit()
+
+                    matched_student['line_display_name'] = line_display_name
+                    matched_student['line_picture_url'] = line_picture_url
+
+                    return {
+                        'success': True,
+                        'action': 'login',
+                        'message': f'歡迎回來，{matched_student["name"]}！',
+                        'student': format_student_info(matched_student)
+                    }, 200
+                else:
+                    # 尚未關聯任何會員帳號，回傳必要資料以引導綁定或註冊
+                    return {
+                        'success': False,
+                        'not_linked': True,
+                        'action': 'need_link',
+                        'line_user_id': line_user_id,
+                        'line_display_name': line_display_name,
+                        'line_picture_url': line_picture_url,
+                        'message': f'您的 LINE 帳號「{line_display_name}」尚未關聯會員帳號，請綁定既有手機帳號或立即註冊！'
+                    }, 200
+
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return {'error': f'LINE 授權處理失敗: {str(e)}'}, 500
+
+class LineDirectBindResource(Resource):
+    def post(self):
+        """
+        學員或管理員直接綁定 LINE 帳號 (支援前端由 LIFF 取得、管理後台手動綁定、或模擬關聯)
+        """
+        try:
+            data = request.get_json() or {}
+            student_id = data.get('student_id')
+            line_user_id = (data.get('line_user_id') or '').strip()
+            line_display_name = (data.get('line_display_name') or '').strip() or 'LINE 用戶'
+            line_picture_url = data.get('line_picture_url') or None
+
+            if not student_id:
+                return {'error': '缺少 student_id'}, 400
+            if not line_user_id:
+                return {'error': '請提供欲關聯的 LINE User ID'}, 400
+
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+
+            try:
+                cursor = connection.cursor(dictionary=True)
+                # 確認學員存在
+                cursor.execute("SELECT id, name FROM students WHERE id = %s", (student_id,))
+                student = cursor.fetchone()
+                if not student:
+                    return {'error': '找不到此學員資料'}, 404
+
+                # 檢查該 LINE User ID 是否已被其他人綁定
+                cursor.execute("SELECT id, name FROM students WHERE line_user_id = %s AND id != %s", (line_user_id, student_id))
+                conflict = cursor.fetchone()
+                if conflict:
+                    return {'error': f'此 LINE 帳號已被學員「{conflict["name"]}」關聯！'}, 400
+
+                cursor.execute("""
+                UPDATE students 
+                SET line_user_id = %s, line_display_name = %s, line_picture_url = %s, line_linked_at = NOW()
+                WHERE id = %s
+                """, (line_user_id, line_display_name, line_picture_url, student_id))
+                connection.commit()
+
+                cursor.execute("SELECT * FROM students WHERE id = %s", (student_id,))
+                updated_student = cursor.fetchone()
+
+                return {
+                    'success': True,
+                    'message': f'學員【{student["name"]}】已成功關聯 LINE 帳號「{line_display_name}」！',
+                    'student': format_student_info(updated_student)
+                }, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'綁定 LINE 失敗: {str(e)}'}, 500
+
+class LineDirectUnbindResource(Resource):
+    def post(self):
+        """解除學員與 LINE 帳號的關聯"""
+        try:
+            data = request.get_json() or {}
+            student_id = data.get('student_id')
+            if not student_id:
+                return {'error': '缺少 student_id 參數'}, 400
+
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+
+            try:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("SELECT id, name, line_display_name FROM students WHERE id = %s", (student_id,))
+                student = cursor.fetchone()
+                if not student:
+                    return {'error': '找不到此學員資料'}, 404
+
+                cursor.execute("""
+                UPDATE students 
+                SET line_user_id = NULL, line_display_name = NULL, line_picture_url = NULL, line_linked_at = NULL
+                WHERE id = %s
+                """, (student_id,))
+                connection.commit()
+
+                cursor.execute("SELECT * FROM students WHERE id = %s", (student_id,))
+                updated = cursor.fetchone()
+
+                return {
+                    'success': True,
+                    'message': f'已成功解除學員【{student["name"]}】的 LINE 帳號關聯！',
+                    'student': format_student_info(updated)
+                }, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'解除 LINE 關聯失敗: {str(e)}'}, 500
+
+class LineLinkPhoneResource(Resource):
+    def post(self):
+        """
+        當用戶使用 LINE 登入但尚未綁定時：
+        - 模式 1: 關聯既有手機帳號 (需驗證密碼或首次登入設密碼)
+        - 模式 2: 註冊為新會員並直接完成 LINE 關聯
+        """
+        try:
+            data = request.get_json() or {}
+            mode = data.get('mode') or 'link'  # 'link' 或 'register'
+            line_user_id = (data.get('line_user_id') or '').strip()
+            line_display_name = (data.get('line_display_name') or '').strip() or 'LINE 會員'
+            line_picture_url = data.get('line_picture_url') or None
+            phone = (data.get('phone') or '').strip()
+
+            if not line_user_id:
+                return {'error': '缺少 LINE 用戶識別碼'}, 400
+            if not phone:
+                return {'error': '請輸入手機電話號碼'}, 400
+
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+
+            try:
+                cursor = connection.cursor(dictionary=True)
+
+                # 檢查該 LINE 是否已被他人綁定
+                cursor.execute("SELECT id, name FROM students WHERE line_user_id = %s", (line_user_id,))
+                conflict = cursor.fetchone()
+                if conflict:
+                    return {'error': f'此 LINE 帳號已被學員「{conflict["name"]}」關聯！'}, 400
+
+                if mode == 'link':
+                    # 關聯現有手機帳號
+                    password = data.get('password')
+                    cursor.execute("SELECT * FROM students WHERE phone = %s", (phone,))
+                    student = cursor.fetchone()
+                    if not student:
+                        return {'error': '查無此手機號碼的會員資料，請點選「註冊新會員並綁定」！'}, 404
+
+                    if student.get('password_hash'):
+                        if not password or not check_password_hash(student['password_hash'], str(password)):
+                            return {'error': '密碼錯誤，請重新確認'}, 401
+                    else:
+                        # 首次登入無密碼，若有傳新密碼則設定
+                        if password and len(str(password).strip()) >= 4:
+                            p_hash = generate_password_hash(str(password).strip())
+                            cursor.execute("UPDATE students SET password_hash = %s WHERE id = %s", (p_hash, student['id']))
+
+                    # 綁定 LINE
+                    cursor.execute("""
+                    UPDATE students 
+                    SET line_user_id = %s, line_display_name = %s, line_picture_url = %s, line_linked_at = NOW()
+                    WHERE id = %s
+                    """, (line_user_id, line_display_name, line_picture_url, student['id']))
+                    connection.commit()
+
+                    cursor.execute("SELECT * FROM students WHERE id = %s", (student['id'],))
+                    updated = cursor.fetchone()
+                    return {
+                        'success': True,
+                        'message': f'成功關聯手機號碼與 LINE 帳號！歡迎回來，{updated["name"]}！',
+                        'student': format_student_info(updated)
+                    }, 200
+
+                elif mode == 'register':
+                    # 新註冊並直接綁定 LINE
+                    name = (data.get('name') or '').strip() or line_display_name
+                    password = data.get('password')
+                    email = (data.get('email') or '').strip() or None
+
+                    if not name:
+                        return {'error': '請輸入姓名'}, 400
+                    if not password or len(str(password).strip()) < 4:
+                        return {'error': '密碼至少需 4 個字元'}, 400
+
+                    # 檢查手機是否重複
+                    cursor.execute("SELECT id FROM students WHERE phone = %s", (phone,))
+                    if cursor.fetchone():
+                        return {'error': '此手機號碼已註冊，請選擇「關聯既有手機帳號」登入！'}, 400
+
+                    p_hash = generate_password_hash(str(password).strip())
+                    today = datetime.now().date()
+                    membership_expiry = today + timedelta(days=365)
+
+                    cursor.execute("""
+                    INSERT INTO students 
+                    (name, phone, email, password_hash, remaining_classes, membership_expiry, line_user_id, line_display_name, line_picture_url, line_linked_at)
+                    VALUES (%s, %s, %s, %s, 0, %s, %s, %s, %s, NOW())
+                    """, (name, phone, email, p_hash, membership_expiry, line_user_id, line_display_name, line_picture_url))
+                    connection.commit()
+
+                    new_id = cursor.lastrowid
+                    cursor.execute("SELECT * FROM students WHERE id = %s", (new_id,))
+                    new_student = cursor.fetchone()
+
+                    return {
+                        'success': True,
+                        'message': f'恭喜 {name} 註冊成功並已綁定 LINE！歡迎加入 Dance Studio！',
+                        'student': format_student_info(new_student)
+                    }, 201
+                else:
+                    return {'error': '未知的模式 (mode)'}, 400
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'關聯手機處理失敗: {str(e)}'}, 500
+
+class LineAdminSettingsResource(Resource):
+    def get(self):
+        """後台管理員取得完整 LINE 設定"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                s = get_line_system_settings(cursor)
+                return {
+                    'success': True,
+                    'settings': {
+                        'line_login_enabled': s['line_login_enabled'] == '1',
+                        'line_channel_id': s['line_channel_id'],
+                        'line_channel_secret': s['line_channel_secret'],
+                        'line_official_id': s['line_official_id'],
+                        'line_official_url': s['line_official_url']
+                    }
+                }, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'查詢 LINE 設定失敗: {str(e)}'}, 500
+
+    def post(self):
+        """後台管理員更新 LINE 設定"""
+        try:
+            data = request.get_json() or {}
+            enabled = '1' if data.get('line_login_enabled') else '0'
+            channel_id = (data.get('line_channel_id') or '').strip()
+            channel_secret = (data.get('line_channel_secret') or '').strip()
+            official_id = (data.get('line_official_id') or '').strip()
+            official_url = (data.get('line_official_url') or '').strip()
+
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(buffered=True)
+                items = [
+                    ('line_login_enabled', enabled, '是否啟用 LINE 快速登入與帳號關聯 (0=關閉, 1=開啟)'),
+                    ('line_channel_id', channel_id, 'LINE Login Channel ID'),
+                    ('line_channel_secret', channel_secret, 'LINE Login Channel Secret'),
+                    ('line_official_id', official_id, '工作室 LINE 官方帳號 ID'),
+                    ('line_official_url', official_url, '工作室 LINE 官方加好友連結')
+                ]
+                for k, v, desc in items:
+                    cursor.execute("""
+                    INSERT INTO system_settings (setting_key, setting_value, description)
+                    VALUES (%s, %s, %s)
+                    ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+                    """, (k, v, desc))
+
+                connection.commit()
+                return {'success': True, 'message': 'LINE 整合設定已更新成功！'}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'更新 LINE 設定失敗: {str(e)}'}, 500
+
+api.add_resource(LinePublicConfigResource, '/api/line/config')
+api.add_resource(LineAuthUrlResource, '/api/line/auth-url')
+api.add_resource(LineCallbackResource, '/api/line/callback')
+api.add_resource(LineDirectBindResource, '/api/student/line/bind')
+api.add_resource(LineDirectUnbindResource, '/api/student/line/unbind')
+api.add_resource(LineLinkPhoneResource, '/api/student/line/link-with-phone')
+api.add_resource(LineAdminSettingsResource, '/api/admin/settings/line')
+
 
 # ==========================================
 # 後台管理員 / 櫃檯 / 老師 權限與登入 API
@@ -2994,7 +4051,7 @@ class AdminUsers(Resource):
                 users = cursor.fetchall()
                 for u in users:
                     u['hourly_rate'] = float(u.get('hourly_rate') or 0)
-                    for field in ['created_at', 'updated_at']:
+                    for field in ['created_at', 'updated_at', 'line_linked_at']:
                         if u.get(field) and isinstance(u[field], datetime):
                             u[field] = u[field].isoformat()
 
@@ -3037,7 +4094,7 @@ class AdminUsers(Resource):
 
                 cursor.execute("""
                 INSERT INTO admin_users (username, password, name, role, phone, hourly_rate, bank_account, teacher_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (username, password, name, role, phone, hourly_rate, bank_account, teacher_id))
                 connection.commit()
 
@@ -3069,7 +4126,7 @@ class AdminUser(Resource):
                 if not user:
                     return {'error': '找不到該使用者'}, 404
                 user['hourly_rate'] = float(user.get('hourly_rate') or 0)
-                for field in ['created_at', 'updated_at']:
+                for field in ['created_at', 'updated_at', 'line_linked_at']:
                     if user.get(field) and isinstance(user[field], datetime):
                         user[field] = user[field].isoformat()
                 return {'success': True, 'user': user}, 200
@@ -3147,7 +4204,7 @@ class AdminUser(Resource):
             if not connection:
                 return {'error': '資料庫連接失敗'}, 500
             try:
-                cursor = connection.cursor()
+                cursor = connection.cursor(buffered=True)
                 cursor.execute("DELETE FROM admin_users WHERE id = %s", (user_id,))
                 connection.commit()
                 return {'success': True, 'message': '帳號已成功刪除！'}, 200
@@ -3290,7 +4347,7 @@ class AttendanceIpSettings(Resource):
             if not connection:
                 return {'error': '資料庫連接失敗'}, 500
             try:
-                cursor = connection.cursor()
+                cursor = connection.cursor(buffered=True)
                 enabled_str = '1' if enabled else '0'
 
                 cursor.execute("""
@@ -3413,6 +4470,7 @@ class StaffAttendanceStatus(Resource):
                     'is_clocked_in': bool(active_shift),
                     'active_shift': active_shift,
                     'today_records': today_records,
+                    'substitute_schedules': [],
                     'client_ip': get_client_ip()
                 }, 200
             finally:
@@ -3714,7 +4772,7 @@ class StaffAttendanceItem(Resource):
             if not connection:
                 return {'error': '資料庫連接失敗'}, 500
             try:
-                cursor = connection.cursor()
+                cursor = connection.cursor(buffered=True)
                 cursor.execute("DELETE FROM staff_attendance WHERE id = %s", (attendance_id,))
                 connection.commit()
                 return {'success': True, 'message': '打卡記錄已刪除'}, 200
@@ -3879,7 +4937,8 @@ class TeacherAttendanceStatus(Resource):
                                (SELECT COUNT(*) FROM enrollments WHERE schedule_id = %s AND status = 'confirmed') as student_count
                         FROM course_schedules cs
                         JOIN courses c ON cs.course_id = c.id
-                        WHERE cs.id = %s
+    
+                WHERE cs.id = %s
                         """, (sched_id, sched_id))
                         c_info = cursor.fetchone()
                     elif active_shift.get('course_id'):
@@ -3917,21 +4976,21 @@ class TeacherAttendanceStatus(Resource):
 
                 # 查詢今日該老師的所有排程時段
                 today_schedules = []
-                if t_id:
+                target_date = request.args.get('date') or datetime.now().strftime('%Y-%m-%d')
+                req_sched_id = request.args.get('schedule_id')
+                if True:
                     cursor.execute("""
                     SELECT cs.id as schedule_id, cs.schedule_date, cs.start_time, cs.end_time,
                            c.id as course_id, c.name as course_name, c.level, c.base_salary, c.low_student_threshold, c.low_student_salary,
                            c.extra_student_threshold, c.extra_student_fee, c.salary_cap,
                            r.name as room_name,
-                           COUNT(CASE WHEN e.status = 'confirmed' THEN 1 END) as student_count
+                           (SELECT COUNT(*) FROM enrollments e WHERE e.schedule_id = cs.id AND e.status = 'confirmed') as student_count
                     FROM course_schedules cs
                     JOIN courses c ON cs.course_id = c.id
                     LEFT JOIN rooms r ON cs.room_id = r.id
-                    LEFT JOIN enrollments e ON cs.id = e.schedule_id
-                    WHERE c.teacher_id = %s AND cs.schedule_date = CURRENT_DATE()
-                    GROUP BY cs.id
+                    WHERE cs.is_active = TRUE AND (%s IS NULL OR COALESCE(cs.teacher_id, c.teacher_id) = %s) AND (cs.schedule_date = %s OR cs.schedule_date = CURRENT_DATE())
                     ORDER BY cs.start_time ASC
-                    """, (t_id,))
+                    """, (t_id, t_id, target_date))
                     raw_schedules = cursor.fetchall()
 
                     for s in raw_schedules:
@@ -3950,7 +5009,7 @@ class TeacherAttendanceStatus(Resource):
                         s['salary_cap'] = float(s.get('salary_cap') or 0)
 
                         # 試算預估鐘點費
-                        est_salary, _, _ = compute_teacher_schedule_salary(cursor, s['schedule_id'], t_id)
+                        est_salary, _, _ = compute_teacher_schedule_salary(cursor, s['schedule_id'], s.get('teacher_id') or t_id)
                         s['estimated_salary'] = est_salary
 
                         # 檢查此排程今日是否有打卡記錄
@@ -3975,14 +5034,16 @@ class TeacherAttendanceStatus(Resource):
 
                 # 查詢該老師的所有開設課程 (供無排程或自由授課選擇拆帳規則)
                 teacher_courses = []
-                if t_id:
+                target_date = request.args.get('date') or datetime.now().strftime('%Y-%m-%d')
+                req_sched_id = request.args.get('schedule_id')
+                if True:
                     cursor.execute("""
                     SELECT id, name, level, base_salary, low_student_threshold, low_student_salary,
                            extra_student_threshold, extra_student_fee, salary_cap
                     FROM courses
-                    WHERE teacher_id = %s
+                    WHERE (%s IS NULL OR teacher_id = %s) AND %s IS NOT NULL
                     ORDER BY name ASC
-                    """, (t_id,))
+                    """, (t_id, t_id, target_date))
                     teacher_courses = cursor.fetchall()
                     for tc in teacher_courses:
                         tc['base_salary'] = float(tc.get('base_salary') or 0)
@@ -3991,6 +5052,43 @@ class TeacherAttendanceStatus(Resource):
                         tc['extra_student_threshold'] = int(tc.get('extra_student_threshold') or 0)
                         tc['extra_student_fee'] = float(tc.get('extra_student_fee') or 0)
                         tc['salary_cap'] = float(tc.get('salary_cap') or 0)
+
+                # 查詢今日其他老師的排程時段 (供現場臨時替他人代課打卡)
+                substitute_schedules = []
+                target_date = request.args.get('date') or datetime.now().strftime('%Y-%m-%d')
+                req_sched_id = request.args.get('schedule_id')
+                if True:
+                    cursor.execute("""
+                    SELECT cs.id as schedule_id, cs.schedule_date, cs.start_time, cs.end_time,
+                           c.id as course_id, c.name as course_name, c.level, c.base_salary, c.low_student_threshold, c.low_student_salary,
+                           c.extra_student_threshold, c.extra_student_fee, c.salary_cap,
+                           r.name as room_name,
+                           orig_t.id as original_teacher_id, orig_t.name as original_teacher_name,
+                           (SELECT COUNT(*) FROM enrollments e WHERE e.schedule_id = cs.id AND e.status = 'confirmed') as student_count
+                    FROM course_schedules cs
+                    JOIN courses c ON cs.course_id = c.id
+                    LEFT JOIN rooms r ON cs.room_id = r.id
+                    LEFT JOIN teachers orig_t ON COALESCE(cs.teacher_id, c.teacher_id) = orig_t.id
+                    WHERE cs.is_active = TRUE AND (%s IS NOT NULL AND (COALESCE(cs.teacher_id, c.teacher_id) != %s OR COALESCE(cs.teacher_id, c.teacher_id) IS NULL)) AND (cs.schedule_date = %s OR cs.schedule_date = CURRENT_DATE())
+                    ORDER BY cs.start_time ASC
+                    """, (t_id, t_id, target_date))
+                    raw_subs = cursor.fetchall()
+                    for sub in raw_subs:
+                        if isinstance(sub.get('schedule_date'), date):
+                            sub['schedule_date'] = sub['schedule_date'].isoformat()
+                        sub['start_time_text'] = format_time_delta(sub.get('start_time'))
+                        sub['end_time_text'] = format_time_delta(sub.get('end_time'))
+                        sub['start_time'] = sub['start_time_text']
+                        sub['end_time'] = sub['end_time_text']
+                        sub['time_range'] = f"{sub['start_time_text']} - {sub['end_time_text']}"
+                        sub['base_salary'] = float(sub.get('base_salary') or 0)
+                        sub['low_student_threshold'] = int(sub.get('low_student_threshold') or 0)
+                        sub['low_student_salary'] = float(sub.get('low_student_salary') or 0)
+                        sub['extra_student_threshold'] = int(sub.get('extra_student_threshold') or 0)
+                        sub['extra_student_fee'] = float(sub.get('extra_student_fee') or 0)
+                        sub['salary_cap'] = float(sub.get('salary_cap') or 0)
+                        sub['student_count'] = int(sub.get('student_count') or 0)
+                        substitute_schedules.append(sub)
 
                 # 查詢今日已完成或進行中的上課打卡歷史
                 today_records = []
@@ -4016,6 +5114,7 @@ class TeacherAttendanceStatus(Resource):
                     'today_schedules': today_schedules,
                     'teacher_courses': teacher_courses,
                     'today_records': today_records,
+                    'substitute_schedules': substitute_schedules,
                     'client_ip': get_client_ip(),
                     'teacher_info': {
                         'user_id': u_id,
@@ -4071,18 +5170,26 @@ class TeacherAttendanceClockIn(Resource):
                     return {'error': '找不到該老師帳號'}, 404
 
                 teacher_id = user.get('teacher_id')
+                is_substitute = bool(data.get('is_substitute', False))
+                original_teacher_id = data.get('original_teacher_id')
 
                 # 若指定了 schedule_id，自動帶出課程 ID 與名稱
                 if schedule_id:
                     cursor.execute("""
-                    SELECT c.id as course_id, c.name as course_name FROM course_schedules cs
+                    SELECT cs.teacher_id as cs_teacher_id, c.id as course_id, c.name as course_name, c.teacher_id as c_teacher_id FROM course_schedules cs
                     JOIN courses c ON cs.course_id = c.id
-                    WHERE cs.id = %s
+
+                WHERE cs.id = %s
                     """, (schedule_id,))
                     c_row = cursor.fetchone()
                     if c_row:
                         course_id = c_row['course_id']
                         course_name = c_row['course_name']
+                        def_teacher = c_row.get('cs_teacher_id') or c_row.get('c_teacher_id')
+                        if def_teacher and teacher_id and int(def_teacher) != int(teacher_id):
+                            is_substitute = True
+                            original_teacher_id = def_teacher
+                            cursor.execute("UPDATE course_schedules SET teacher_id = %s, is_substitute = 1, substitute_notes = COALESCE(%s, substitute_notes, '現場即時代課') WHERE id = %s", (teacher_id, notes, schedule_id))
                 elif course_id:
                     cursor.execute("SELECT name FROM courses WHERE id = %s", (course_id,))
                     c_row = cursor.fetchone()
@@ -4094,9 +5201,9 @@ class TeacherAttendanceClockIn(Resource):
 
                 now = datetime.now()
                 cursor.execute("""
-                INSERT INTO teacher_attendance (user_id, teacher_id, schedule_id, course_id, course_name, clock_in, notes, clock_in_ip)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """, (user_id, teacher_id, schedule_id or None, course_id or None, course_name, now, notes, client_ip))
+                INSERT INTO teacher_attendance (user_id, teacher_id, schedule_id, course_id, course_name, clock_in, notes, clock_in_ip, is_substitute, original_teacher_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (user_id, teacher_id, schedule_id or None, course_id or None, course_name, now, notes, client_ip, 1 if is_substitute else 0, original_teacher_id or None))
                 connection.commit()
 
                 return {
@@ -4345,7 +5452,7 @@ class TeacherAttendanceItem(Resource):
             if not connection:
                 return {'error': '資料庫連接失敗'}, 500
             try:
-                cursor = connection.cursor()
+                cursor = connection.cursor(buffered=True)
                 cursor.execute("DELETE FROM teacher_attendance WHERE id = %s", (attendance_id,))
                 connection.commit()
                 return {'success': True, 'message': '打卡記錄已刪除'}, 200
@@ -4405,7 +5512,7 @@ class TeacherAvatarUpload(Resource):
                 connection = get_db_connection()
                 if connection:
                     try:
-                        cursor = connection.cursor()
+                        cursor = connection.cursor(buffered=True)
                         cursor.execute("UPDATE teachers SET avatar_url = %s WHERE id = %s", (avatar_url, teacher_id))
                         connection.commit()
                     finally:
@@ -4428,7 +5535,7 @@ class TeacherAvatarUpload(Resource):
             connection = get_db_connection()
             if connection:
                 try:
-                    cursor = connection.cursor()
+                    cursor = connection.cursor(buffered=True)
                     cursor.execute("UPDATE teachers SET avatar_url = NULL WHERE id = %s", (teacher_id,))
                     connection.commit()
                     return {'success': True, 'message': '大頭貼已成功清除'}
@@ -4454,7 +5561,1952 @@ api.add_resource(TeacherAttendanceClockIn, '/api/admin/teacher-attendance/clock-
 api.add_resource(TeacherAttendanceClockOut, '/api/admin/teacher-attendance/clock-out')
 api.add_resource(TeacherAttendanceList, '/api/admin/teacher-attendance')
 api.add_resource(TeacherAttendanceItem, '/api/admin/teacher-attendance/<int:attendance_id>')
+class RoomImageUpload(Resource):
+    def post(self, room_id=None):
+        """上傳教室/環境照片"""
+        try:
+            file = request.files.get('file') or request.files.get('image')
+            image_url = None
+            
+            if file and file.filename:
+                ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else 'jpg'
+                if ext not in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
+                    return {'error': '僅支援 JPG, PNG, GIF, WEBP 圖片格式'}, 400
+                
+                safe_name = f"room_{room_id or 'new'}_{int(time.time())}.{ext}"
+                file_path = os.path.join(ROOMS_FOLDER, safe_name)
+                file.save(file_path)
+                image_url = f"/api/uploads/rooms/{safe_name}"
+            else:
+                data = request.get_json() or {}
+                raw_url = data.get('image_url')
+                raw_base64 = data.get('image_base64') or data.get('base64')
+                
+                if raw_url:
+                    image_url = raw_url.strip()
+                elif raw_base64:
+                    import base64
+                    if ',' in raw_base64:
+                        header, base64_data = raw_base64.split(',', 1)
+                        if 'png' in header:
+                            ext = 'png'
+                        elif 'webp' in header:
+                            ext = 'webp'
+                        else:
+                            ext = 'jpg'
+                    else:
+                        base64_data = raw_base64
+                        ext = 'jpg'
+                    img_bytes = base64.b64decode(base64_data)
+                    safe_name = f"room_{room_id or 'new'}_{int(time.time())}.{ext}"
+                    file_path = os.path.join(ROOMS_FOLDER, safe_name)
+                    with open(file_path, 'wb') as f:
+                        f.write(img_bytes)
+                    image_url = f"/api/uploads/rooms/{safe_name}"
+                else:
+                    return {'error': '未收到上傳檔案或圖片資料'}, 400
+
+            # 若有指定 room_id，立即更新 rooms 資料庫
+            if room_id:
+                connection = get_db_connection()
+                if connection:
+                    try:
+                        cursor = connection.cursor(buffered=True)
+                        cursor.execute("UPDATE rooms SET image_url = %s WHERE id = %s", (image_url, room_id))
+                        connection.commit()
+                    finally:
+                        cursor.close()
+                        connection.close()
+
+            return {
+                'success': True,
+                'image_url': image_url,
+                'message': '教室圖片上傳成功！'
+            }, 200
+        except Exception as e:
+            return {'error': f'教室圖片上傳失敗: {str(e)}'}, 500
+
+    def delete(self, room_id=None):
+        """清除教室圖片"""
+        try:
+            if not room_id:
+                return {'error': '缺少教室 ID'}, 400
+            connection = get_db_connection()
+            if connection:
+                try:
+                    cursor = connection.cursor(buffered=True)
+                    cursor.execute("UPDATE rooms SET image_url = NULL WHERE id = %s", (room_id,))
+                    connection.commit()
+                    return {'success': True, 'message': '已清除教室圖片'}, 200
+                finally:
+                    cursor.close()
+                    connection.close()
+            return {'error': '資料庫連線失敗'}, 500
+        except Exception as e:
+            return {'error': f'清除教室圖片失敗: {str(e)}'}, 500
+
+api.add_resource(RoomImageUpload, '/api/rooms/<int:room_id>/image', '/api/upload/room-image')
 api.add_resource(AttendanceIpSettings, '/api/admin/settings/attendance-ip')
+
+class NewsListResource(Resource):
+    def get(self):
+        """取得最新消息與活動列表"""
+        try:
+            category = request.args.get('category')
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連線失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                if category:
+                    cursor.execute("SELECT * FROM news WHERE category = %s AND is_published = 1 ORDER BY publish_date DESC, id DESC", (category,))
+                else:
+                    cursor.execute("SELECT * FROM news WHERE is_published = 1 ORDER BY publish_date DESC, id DESC")
+                items = cursor.fetchall()
+                for item in items:
+                    for field in ['publish_date', 'created_at', 'updated_at']:
+                        if item.get(field):
+                            item[field] = str(item[field])
+                return {'success': True, 'news': items, 'total': len(items)}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'查詢最新消息失敗: {str(e)}'}, 500
+
+    def post(self):
+        """新增消息或活動"""
+        try:
+            data = request.get_json() or {}
+            title = data.get('title')
+            if not title:
+                return {'error': '缺少標題'}, 400
+            
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連線失敗'}, 500
+            try:
+                cursor = connection.cursor(buffered=True)
+                cursor.execute("""
+                    INSERT INTO news (title, category, tag, summary, content, image_url, is_published, publish_date)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, COALESCE(%s, CURRENT_DATE))
+                """, (
+                    title,
+                    data.get('category', 'news'),
+                    data.get('tag', '公告'),
+                    data.get('summary', ''),
+                    data.get('content', ''),
+                    data.get('image_url', ''),
+                    1 if data.get('is_published', True) else 0,
+                    data.get('publish_date')
+                ))
+                connection.commit()
+                news_id = cursor.lastrowid
+                return {'success': True, 'id': news_id, 'message': '新增成功'}, 201
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'新增消息失敗: {str(e)}'}, 500
+
+class NewsItemResource(Resource):
+    def get(self, news_id):
+        """取得單一消息"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連線失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("SELECT * FROM news WHERE id = %s", (news_id,))
+                item = cursor.fetchone()
+                if not item:
+                    return {'error': '消息未找到'}, 404
+                for field in ['publish_date', 'created_at', 'updated_at']:
+                    if item.get(field):
+                        item[field] = str(item[field])
+                return {'success': True, 'news': item}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'查詢消息失敗: {str(e)}'}, 500
+
+    def put(self, news_id):
+        """更新消息"""
+        try:
+            data = request.get_json() or {}
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連線失敗'}, 500
+            try:
+                cursor = connection.cursor(buffered=True)
+                update_fields = []
+                values = []
+                for field in ['title', 'category', 'tag', 'summary', 'content', 'image_url', 'is_published', 'publish_date']:
+                    if field in data:
+                        update_fields.append(f"{field} = %s")
+                        values.append(data[field])
+                if not update_fields:
+                    return {'error': '無可更新欄位'}, 400
+                values.append(news_id)
+                cursor.execute(f"UPDATE news SET {', '.join(update_fields)} WHERE id = %s", tuple(values))
+                connection.commit()
+                return {'success': True, 'message': '更新成功'}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'更新失敗: {str(e)}'}, 500
+
+    def delete(self, news_id):
+        """刪除消息"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連線失敗'}, 500
+            try:
+                cursor = connection.cursor(buffered=True)
+                cursor.execute("DELETE FROM news WHERE id = %s", (news_id,))
+                connection.commit()
+                return {'success': True, 'message': '刪除成功'}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'刪除失敗: {str(e)}'}, 500
+
+class TeacherFeaturedToggle(Resource):
+    def post(self, teacher_id):
+        """切換老師是否為本月主打星"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("SELECT is_featured FROM teachers WHERE id = %s", (teacher_id,))
+                row = cursor.fetchone()
+                if not row:
+                    return {'error': '找不到該老師'}, 404
+                new_state = 0 if row.get('is_featured') else 1
+                cursor.execute("UPDATE teachers SET is_featured = %s WHERE id = %s", (new_state, teacher_id))
+                connection.commit()
+                return {
+                    'success': True,
+                    'is_featured': bool(new_state),
+                    'message': '已設為本月主打星！' if new_state else '已取消本月主打星'
+                }, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'更新主打星狀態失敗: {str(e)}'}, 500
+
+api.add_resource(NewsListResource, '/api/news')
+api.add_resource(NewsItemResource, '/api/news/<int:news_id>')
+api.add_resource(TeacherFeaturedToggle, '/api/teachers/<int:teacher_id>/toggle-featured')
+
+
+def parse_plan_features(raw_features):
+    """解析 features 欄位，支援 JSON 陣列或換行分隔字串"""
+    if not raw_features:
+        return []
+    if isinstance(raw_features, list):
+        return raw_features
+    try:
+        parsed = json.loads(raw_features)
+        if isinstance(parsed, list):
+            return [str(item).strip() for item in parsed if str(item).strip()]
+    except Exception:
+        pass
+    return [line.strip() for line in str(raw_features).split('\n') if line.strip()]
+
+def format_pricing_plan(row):
+    """格式化方案資料給前端"""
+    if not row:
+        return None
+    features = parse_plan_features(row.get('features'))
+    return {
+        'id': row['id'],
+        'title': row.get('title', ''),
+        'subtitle': row.get('subtitle', ''),
+        'price': row.get('price', ''),
+        'unit': row.get('unit', ''),
+        'plan_type': row.get('plan_type') or 'classes',
+        'validity_days': row.get('validity_days') or 0,
+        'original_price': row.get('original_price'),
+        'classes_count': row.get('classes_count') if row.get('classes_count') is not None else 1,
+        'is_popular': bool(row.get('is_popular')),
+        'requires_membership': bool(row.get('requires_membership', 0)),
+        'features': features,
+        'button_text': row.get('button_text') or '買課',
+        'button_link': row.get('button_link') or '/contact',
+        'sort_order': row.get('sort_order', 0),
+        'is_active': bool(row.get('is_active', 1)),
+        'created_at': str(row.get('created_at')) if row.get('created_at') else None,
+        'updated_at': str(row.get('updated_at')) if row.get('updated_at') else None
+    }
+
+class PricingListResource(Resource):
+    def get(self):
+        """取得價目表方案清單及上課須知 (支援 ?admin=1 取得全部方案)"""
+        try:
+            is_admin = request.args.get('admin') in ['1', 'true', 'True'] or request.args.get('all') in ['1', 'true', 'True']
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                if is_admin:
+                    cursor.execute("SELECT * FROM pricing_plans ORDER BY sort_order ASC, id ASC")
+                else:
+                    cursor.execute("SELECT * FROM pricing_plans WHERE is_active = 1 ORDER BY sort_order ASC, id ASC")
+                rows = cursor.fetchall()
+                plans = [format_pricing_plan(r) for r in rows]
+
+                cursor.execute("""
+                    SELECT setting_key, setting_value FROM system_settings 
+                    WHERE setting_key IN ('pricing_notice_title', 'pricing_notice_content')
+                """)
+                settings_rows = cursor.fetchall()
+                settings_dict = {s['setting_key']: s['setting_value'] for s in settings_rows}
+
+                notice_title = settings_dict.get('pricing_notice_title') or '學員報名與上課須知'
+                notice_content = settings_dict.get('pricing_notice_content') or ''
+                notice_items = [line.strip() for line in notice_content.split('\n') if line.strip()]
+
+                return {
+                    'success': True,
+                    'plans': plans,
+                    'total': len(plans),
+                    'notice': {
+                        'title': notice_title,
+                        'content': notice_content,
+                        'items': notice_items
+                    }
+                }, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'查詢價目表失敗: {str(e)}'}, 500
+
+    def post(self):
+        """新增價目方案"""
+        try:
+            data = request.get_json() or {}
+            title = (data.get('title') or '').strip()
+            price = (data.get('price') or '').strip()
+            unit = (data.get('unit') or '').strip()
+
+            if not title:
+                return {'error': '請輸入方案名稱'}, 400
+            if not price:
+                return {'error': '請輸入方案價格'}, 400
+            if not unit:
+                return {'error': '請輸入計費單位'}, 400
+
+            features_input = data.get('features')
+            if isinstance(features_input, list):
+                features_str = json.dumps([str(x).strip() for x in features_input if str(x).strip()], ensure_ascii=False)
+            elif isinstance(features_input, str):
+                features_list = [l.strip() for l in features_input.split('\n') if l.strip()]
+                features_str = json.dumps(features_list, ensure_ascii=False)
+            else:
+                features_str = json.dumps([], ensure_ascii=False)
+
+            plan_type = (data.get('plan_type') or 'classes').strip()
+            validity_days = int(data.get('validity_days', 0) or 0)
+            if plan_type == 'membership_fee' and validity_days <= 0:
+                validity_days = 365
+            elif plan_type == 'monthly_pass' and validity_days <= 0:
+                validity_days = 30
+            is_popular = 1 if data.get('is_popular') else 0
+            requires_membership = 1 if (data.get('requires_membership') and plan_type != 'membership_fee') else 0
+            is_active = 1 if data.get('is_active', True) else 0
+            sort_order = int(data.get('sort_order', 0) or 0)
+            classes_count = int(data.get('classes_count', 0) if data.get('classes_count') is not None else (1 if plan_type == 'classes' else 0))
+            subtitle = (data.get('subtitle') or '').strip() or None
+            original_price = (data.get('original_price') or '').strip() or None
+            button_text = (data.get('button_text') or '').strip() or '買課'
+            button_link = (data.get('button_link') or '').strip() or '/contact'
+
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(buffered=True)
+                cursor.execute("""
+                    INSERT INTO pricing_plans 
+                    (title, subtitle, price, unit, plan_type, classes_count, validity_days, original_price, is_popular, requires_membership, features, button_text, button_link, sort_order, is_active)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    title, subtitle, price, unit, plan_type, classes_count, validity_days, original_price, is_popular, requires_membership, features_str,
+                    button_text, button_link, sort_order, is_active
+                ))
+                connection.commit()
+                new_id = cursor.lastrowid
+                return {'success': True, 'id': new_id, 'message': '新增價目方案成功'}, 201
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'新增方案失敗: {str(e)}'}, 500
+
+class PricingItemResource(Resource):
+    def get(self, plan_id):
+        """取得單一價目方案"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("SELECT * FROM pricing_plans WHERE id = %s", (plan_id,))
+                row = cursor.fetchone()
+                if not row:
+                    return {'error': '查無此價目方案'}, 404
+                return {'success': True, 'plan': format_pricing_plan(row)}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'查詢方案失敗: {str(e)}'}, 500
+
+    def put(self, plan_id):
+        """更新價目方案"""
+        try:
+            data = request.get_json() or {}
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("SELECT * FROM pricing_plans WHERE id = %s", (plan_id,))
+                existing = cursor.fetchone()
+                if not existing:
+                    return {'error': '查無此價目方案'}, 404
+
+                update_fields = []
+                values = []
+
+                if 'title' in data:
+                    update_fields.append("title = %s")
+                    values.append(str(data['title']).strip())
+                if 'subtitle' in data:
+                    update_fields.append("subtitle = %s")
+                    values.append(str(data['subtitle']).strip() if data['subtitle'] else None)
+                if 'price' in data:
+                    update_fields.append("price = %s")
+                    values.append(str(data['price']).strip())
+                if 'unit' in data:
+                    update_fields.append("unit = %s")
+                    values.append(str(data['unit']).strip())
+                if 'original_price' in data:
+                    update_fields.append("original_price = %s")
+                    values.append(str(data['original_price']).strip() if data['original_price'] else None)
+                if 'plan_type' in data:
+                    update_fields.append("plan_type = %s")
+                    values.append(str(data['plan_type']).strip() or 'classes')
+                if 'validity_days' in data:
+                    update_fields.append("validity_days = %s")
+                    values.append(int(data['validity_days'] or 0))
+                if 'classes_count' in data:
+                    update_fields.append("classes_count = %s")
+                    values.append(int(data['classes_count'] if data['classes_count'] is not None else 0))
+                if 'is_popular' in data:
+                    update_fields.append("is_popular = %s")
+                    values.append(1 if data['is_popular'] else 0)
+
+
+                if 'requires_membership' in data:
+                    update_fields.append("requires_membership = %s")
+                    values.append(1 if data['requires_membership'] else 0)
+
+
+
+                if 'button_text' in data:
+                    update_fields.append("button_text = %s")
+                    values.append(str(data['button_text']).strip() or '買課')
+                if 'button_link' in data:
+                    update_fields.append("button_link = %s")
+                    values.append(str(data['button_link']).strip() or '/contact')
+                if 'sort_order' in data:
+                    update_fields.append("sort_order = %s")
+                    values.append(int(data['sort_order'] or 0))
+                if 'is_active' in data:
+                    update_fields.append("is_active = %s")
+                    values.append(1 if data['is_active'] else 0)
+                if 'features' in data:
+                    features_input = data['features']
+                    if isinstance(features_input, list):
+                        features_str = json.dumps([str(x).strip() for x in features_input if str(x).strip()], ensure_ascii=False)
+                    elif isinstance(features_input, str):
+                        features_list = [l.strip() for l in features_input.split('\n') if l.strip()]
+                        features_str = json.dumps(features_list, ensure_ascii=False)
+                    else:
+                        features_str = json.dumps([], ensure_ascii=False)
+                    update_fields.append("features = %s")
+                    values.append(features_str)
+
+                if not update_fields:
+                    return {'error': '無可更新欄位'}, 400
+
+                values.append(plan_id)
+                cursor.execute(f"UPDATE pricing_plans SET {', '.join(update_fields)} WHERE id = %s", tuple(values))
+                connection.commit()
+                return {'success': True, 'message': '更新方案成功'}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'更新方案失敗: {str(e)}'}, 500
+
+    def delete(self, plan_id):
+        """刪除價目方案"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(buffered=True)
+                cursor.execute("DELETE FROM pricing_plans WHERE id = %s", (plan_id,))
+                connection.commit()
+                return {'success': True, 'message': '刪除方案成功'}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'刪除方案失敗: {str(e)}'}, 500
+
+class PricingNoticeResource(Resource):
+    def get(self):
+        """取得學員報名與上課須知設定"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("""
+                    SELECT setting_key, setting_value FROM system_settings 
+                    WHERE setting_key IN ('pricing_notice_title', 'pricing_notice_content')
+                """)
+                rows = cursor.fetchall()
+                s_dict = {r['setting_key']: r['setting_value'] for r in rows}
+                title = s_dict.get('pricing_notice_title') or '學員報名與上課須知'
+                content = s_dict.get('pricing_notice_content') or ''
+                items = [l.strip() for l in content.split('\n') if l.strip()]
+                return {
+                    'success': True,
+                    'title': title,
+                    'content': content,
+                    'items': items
+                }, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'查詢上課須知失敗: {str(e)}'}, 500
+
+    def put(self):
+        """更新學員報名與上課須知設定"""
+        try:
+            data = request.get_json() or {}
+            title = (data.get('title') or '學員報名與上課須知').strip()
+            content = (data.get('content') or '').strip()
+
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(buffered=True)
+                cursor.execute("""
+                    INSERT INTO system_settings (setting_key, setting_value, description)
+                    VALUES ('pricing_notice_title', %s, '課程價目表須知標題')
+                    ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+                """, (title,))
+                cursor.execute("""
+                    INSERT INTO system_settings (setting_key, setting_value, description)
+                    VALUES ('pricing_notice_content', %s, '課程價目表學員須知內容(每行一項)')
+                    ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+                """, (content,))
+                connection.commit()
+                return {'success': True, 'message': '上課須知更新成功'}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'更新上課須知失敗: {str(e)}'}, 500
+
+class PricingToggleActiveResource(Resource):
+    def post(self, plan_id):
+        """切換方案上架/下架啟用狀態"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("SELECT is_active FROM pricing_plans WHERE id = %s", (plan_id,))
+                row = cursor.fetchone()
+                if not row:
+                    return {'error': '查無此價目方案'}, 404
+                new_state = 0 if row.get('is_active') else 1
+                cursor.execute("UPDATE pricing_plans SET is_active = %s WHERE id = %s", (new_state, plan_id))
+                connection.commit()
+                return {
+                    'success': True,
+                    'is_active': bool(new_state),
+                    'message': '方案已上架顯示' if new_state else '方案已下架隱藏'
+                }, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'切換狀態失敗: {str(e)}'}, 500
+
+class PricingTogglePopularResource(Resource):
+    def post(self, plan_id):
+        """切換方案是否為熱門推薦"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("SELECT is_popular FROM pricing_plans WHERE id = %s", (plan_id,))
+                row = cursor.fetchone()
+                if not row:
+                    return {'error': '查無此價目方案'}, 404
+                new_state = 0 if row.get('is_popular') else 1
+                cursor.execute("UPDATE pricing_plans SET is_popular = %s WHERE id = %s", (new_state, plan_id))
+                connection.commit()
+                return {
+                    'success': True,
+                    'is_popular': bool(new_state),
+                    'message': '已標記為熱門推薦' if new_state else '已取消熱門推薦'
+                }, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'切換熱門推薦狀態失敗: {str(e)}'}, 500
+
+api.add_resource(PricingListResource, '/api/pricing')
+api.add_resource(PricingItemResource, '/api/pricing/<int:plan_id>')
+api.add_resource(PricingNoticeResource, '/api/pricing/notice')
+api.add_resource(PricingToggleActiveResource, '/api/pricing/<int:plan_id>/toggle-active')
+api.add_resource(PricingTogglePopularResource, '/api/pricing/<int:plan_id>/toggle-popular')
+
+
+class StudentBankInfo(Resource):
+    def put(self, student_id):
+        """會員設定 / 修改約定轉帳銀行後 5 碼"""
+        try:
+            data = request.get_json() or {}
+            bank_last_5 = str(data.get('bank_last_5') or '').strip()
+            if bank_last_5 and not bank_last_5.isalnum():
+                return {'error': '銀行後 5 碼格式不正確，請輸入英數字'}, 400
+            
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("UPDATE students SET bank_last_5 = %s WHERE id = %s", (bank_last_5 or None, student_id))
+                connection.commit()
+                cursor.execute("SELECT * FROM students WHERE id = %s", (student_id,))
+                student = cursor.fetchone()
+                return {
+                    'success': True,
+                    'message': '銀行後 5 碼設定已成功儲存！',
+                    'bank_last_5': bank_last_5 or None,
+                    'student': format_student_info(student)
+                }, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'設定失敗: {str(e)}'}, 500
+
+class PricingOrderListResource(Resource):
+    def get(self):
+        """取得購課訂單列表 (支援依學員、狀態與關鍵字篩選)"""
+        try:
+            student_id = request.args.get('student_id')
+            status = request.args.get('status')
+            keyword = request.args.get('keyword')
+
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+
+                ensure_pricing_database_tables(cursor)
+
+                cursor.execute("SELECT COUNT(*) as pending_count FROM pricing_orders WHERE status = 'pending'")
+                pending_row = cursor.fetchone()
+                pending_count = pending_row['pending_count'] if pending_row else 0
+
+                query = """
+                SELECT o.*, u.name as confirmed_by_name, s.membership_expiry as student_membership_expiry, s.monthly_pass_expiry as student_monthly_pass_expiry
+                FROM pricing_orders o
+                LEFT JOIN admin_users u ON o.confirmed_by = u.id
+                LEFT JOIN students s ON o.student_id = s.id
+                WHERE 1=1
+                """
+                params = []
+
+                if student_id:
+                    query += " AND o.student_id = %s"
+                    params.append(student_id)
+
+                if status and status != 'all':
+                    query += " AND o.status = %s"
+                    params.append(status)
+
+                if keyword:
+                    query += " AND (o.order_no LIKE %s OR o.student_name LIKE %s OR o.student_phone LIKE %s OR o.bank_last_5 LIKE %s)"
+                    like_kw = f"%{keyword.strip()}%"
+                    params.extend([like_kw, like_kw, like_kw, like_kw])
+
+                query += " ORDER BY o.created_at DESC"
+
+                cursor.execute(query, tuple(params))
+                orders = cursor.fetchall()
+
+                for o in orders:
+                    for field in ['created_at', 'updated_at', 'confirmed_at', 'student_membership_expiry', 'student_monthly_pass_expiry']:
+                        if o.get(field):
+                            o[field] = str(o[field])
+
+                return {
+                    'success': True,
+                    'orders': orders,
+                    'total': len(orders),
+                    'pending_count': pending_count
+                }, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'查詢購課訂單失敗: {str(e)}'}, 500
+
+    def post(self):
+        """學員送出買課訂單"""
+        try:
+            data = request.get_json() or {}
+            student_id = data.get('student_id')
+            plan_id = data.get('plan_id')
+            bank_last_5 = str(data.get('bank_last_5') or '').strip()
+            notes = str(data.get('notes') or '').strip()
+            save_bank_info = bool(data.get('save_bank_info', True))
+
+            if not student_id:
+                return {'error': '請先登入學員帳號'}, 401
+            if not plan_id:
+                return {'error': '請選擇要購買的課程方案'}, 400
+            if not bank_last_5:
+                return {'error': '請填寫轉帳銀行後 5 碼'}, 400
+
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+
+                ensure_pricing_database_tables(cursor)
+
+                cursor.execute("SELECT id, name, phone, bank_last_5, membership_expiry FROM students WHERE id = %s", (student_id,))
+                student = cursor.fetchone()
+                if not student:
+                    return {'error': '找不到該學員帳號，請重新登入'}, 404
+
+                cursor.execute("SELECT * FROM pricing_plans WHERE id = %s", (plan_id,))
+                plan = cursor.fetchone()
+                if not plan:
+                    return {'error': '該課程方案不存在或已下架'}, 404
+
+                requires_membership = 1 if plan.get('requires_membership') else 0
+                if requires_membership:
+                    today = date.today()
+                    mem_exp = student.get('membership_expiry')
+                    has_valid_membership = False
+                    if mem_exp:
+                        if isinstance(mem_exp, str):
+                            try:
+                                mem_exp = datetime.strptime(mem_exp.split('T')[0], '%Y-%m-%d').date()
+                            except Exception:
+                                mem_exp = None
+                        if mem_exp and mem_exp >= today:
+                            has_valid_membership = True
+                    if not has_valid_membership:
+                        return {'error': '此方案僅限持有效【會員年費】資格之學員購買。您的會員年費尚未開通或已過期，請先購買或續約「會員年費」！'}, 400
+
+                plan_type = plan.get('plan_type') or 'classes'
+                classes_count = int(plan.get('classes_count') if plan.get('classes_count') is not None else 0)
+                validity_days = int(plan.get('validity_days') or 0)
+
+                now = datetime.now()
+                order_no = f"PO{now.strftime('%Y%m%d%H%M%S')}{int(student_id) % 1000:03d}"
+
+                cursor.execute("""
+                    INSERT INTO pricing_orders 
+                    (order_no, student_id, student_name, student_phone, plan_id, plan_title, price, plan_type, requires_membership, classes_count, validity_days, bank_last_5, status, notes)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'pending', %s)
+                """, (
+                    order_no, student['id'], student['name'], student.get('phone') or '',
+                    plan['id'], plan['title'], plan['price'], plan_type, requires_membership, classes_count, validity_days, bank_last_5, notes or None
+                ))
+                order_id = cursor.lastrowid
+
+                if save_bank_info and student.get('bank_last_5') != bank_last_5:
+                    cursor.execute("UPDATE students SET bank_last_5 = %s WHERE id = %s", (bank_last_5, student_id))
+
+                connection.commit()
+
+                return {
+                    'success': True,
+                    'order_id': order_id,
+                    'order_no': order_no,
+                    'message': '購課訂單已成功送出！待工作人員核對匯款後，系統將自動為您入帳並增加堂數。'
+                }, 201
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'購課下單失敗: {str(e)}'}, 500
+
+class PricingOrderItemResource(Resource):
+    def get(self, order_id):
+        """取得單一購課訂單"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("SELECT * FROM pricing_orders WHERE id = %s", (order_id,))
+                order = cursor.fetchone()
+                if not order:
+                    return {'error': '查無此訂單'}, 404
+                for field in ['created_at', 'updated_at', 'confirmed_at']:
+                    if order.get(field):
+                        order[field] = str(order[field])
+                return {'success': True, 'order': order}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'查詢訂單失敗: {str(e)}'}, 500
+
+    def delete(self, order_id):
+        """刪除購課訂單"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(buffered=True)
+                cursor.execute("DELETE FROM pricing_orders WHERE id = %s", (order_id,))
+                connection.commit()
+                return {'success': True, 'message': '訂單已成功刪除'}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'刪除訂單失敗: {str(e)}'}, 500
+
+class PricingOrderConfirmResource(Resource):
+    def post(self, order_id):
+        """後台管理員確認入帳 (自動為學員增加相應堂數)"""
+        try:
+            data = request.get_json() or {}
+            admin_notes = str(data.get('admin_notes') or '').strip()
+            admin_user_id = data.get('admin_user_id')
+
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+
+                cursor.execute("SELECT * FROM pricing_orders WHERE id = %s FOR UPDATE", (order_id,))
+                order = cursor.fetchone()
+                if not order:
+                    return {'error': '查無此購課訂單'}, 404
+                
+                if order['status'] == 'confirmed':
+                    return {'error': '此訂單先前已確認入帳，不可重複操作'}, 400
+                
+                student_id = order['student_id']
+                cursor.execute("SELECT id, name, remaining_classes, membership_expiry, monthly_pass_expiry FROM students WHERE id = %s FOR UPDATE", (student_id,))
+                student = cursor.fetchone()
+                if not student:
+                    return {'error': '查無對應學員資料'}, 404
+
+                plan_type = order.get('plan_type') or 'classes'
+                
+                # 堂數處理
+                classes_to_add = data.get('classes_to_add')
+                if classes_to_add is None:
+                    classes_to_add = int(order.get('classes_count', 0) or 0)
+                else:
+                    classes_to_add = int(classes_to_add)
+
+                # 月票效期天數處理
+                validity_days_to_add = data.get('validity_days')
+                if validity_days_to_add is None:
+                    validity_days_to_add = int(order.get('validity_days', 0) or 0)
+                else:
+                    validity_days_to_add = int(validity_days_to_add)
+
+                if plan_type == 'monthly_pass' and validity_days_to_add <= 0:
+                    validity_days_to_add = 30
+                elif plan_type == 'membership_fee' and validity_days_to_add <= 0:
+                    validity_days_to_add = 365
+
+                update_msg_parts = []
+                today = date.today()
+
+                # 1. 增加堂數 (若大於 0)
+                if classes_to_add > 0:
+                    cursor.execute("""
+                        UPDATE students 
+                        SET remaining_classes = COALESCE(remaining_classes, 0) + %s
+                        WHERE id = %s
+                    """, (classes_to_add, student_id))
+                    update_msg_parts.append(f"增加 {classes_to_add} 堂課")
+
+                # 2. 展延會員到期日 (若為月票或設定了有效天數)
+                new_expiry_str = None
+                if validity_days_to_add > 0:
+                    # 月費與會員年費分開記錄
+                    if plan_type == 'monthly_pass':
+                        current_expiry = student.get('monthly_pass_expiry')
+                        expiry_col = 'monthly_pass_expiry'
+                        expiry_label = '月費到期日'
+                    elif plan_type == 'membership_fee':
+                        current_expiry = student.get('membership_expiry')
+                        expiry_col = 'membership_expiry'
+                        expiry_label = '會員年費到期日'
+                    else:
+                        current_expiry = student.get('membership_expiry')
+                        expiry_col = 'membership_expiry'
+                        expiry_label = '會員到期日'
+                    if current_expiry:
+                        if isinstance(current_expiry, str):
+                            try:
+                                current_expiry = datetime.strptime(current_expiry.split('T')[0], '%Y-%m-%d').date()
+                            except Exception:
+                                current_expiry = None
+
+                    if current_expiry and current_expiry >= today:
+                        base_date = current_expiry
+                    else:
+                        base_date = today
+
+                    new_expiry = base_date + timedelta(days=validity_days_to_add)
+                    new_expiry_str = str(new_expiry)
+
+                    cursor.execute("""
+                        UPDATE students 
+                        SET """ + expiry_col + """ = %s
+                        WHERE id = %s
+                    """, (new_expiry, student_id))
+                    update_msg_parts.append(f"{expiry_label}展延至 {new_expiry_str} (+{validity_days_to_add}天)")
+
+                cursor.execute("""
+                    UPDATE pricing_orders 
+                    SET status = 'confirmed',
+                        classes_count = %s,
+                        validity_days = %s,
+                        confirmed_by = %s,
+                        confirmed_at = NOW(),
+                        admin_notes = %s
+                    WHERE id = %s
+                """, (classes_to_add, validity_days_to_add, admin_user_id, admin_notes or None, order_id))
+
+                connection.commit()
+
+                summary_str = "、".join(update_msg_parts) if update_msg_parts else "完成入帳"
+                return {
+                    'success': True,
+                    'message': f"訂單 {order['order_no']} 已確認入帳！已成功為學員【{order['student_name']}】{summary_str}。",
+                    'classes_added': classes_to_add,
+                    'validity_days_added': validity_days_to_add,
+                    'new_membership_expiry': new_expiry_str
+                }, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'確認訂單失敗: {str(e)}'}, 500
+
+class PricingOrderRejectResource(Resource):
+    def post(self, order_id):
+        """後台管理員駁回購課訂單 (不增加堂數)"""
+        try:
+            data = request.get_json() or {}
+            admin_notes = str(data.get('admin_notes') or '').strip()
+            admin_user_id = data.get('admin_user_id')
+
+            if not admin_notes:
+                return {'error': '請填寫駁回原因'}, 400
+
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("SELECT * FROM pricing_orders WHERE id = %s FOR UPDATE", (order_id,))
+                order = cursor.fetchone()
+                if not order:
+                    return {'error': '查無此購課訂單'}, 404
+
+                if order['status'] == 'confirmed':
+                    return {'error': '此訂單已確認入帳，無法駁回'}, 400
+
+                cursor.execute("""
+                    UPDATE pricing_orders 
+                    SET status = 'rejected',
+                        confirmed_by = %s,
+                        confirmed_at = NOW(),
+                        admin_notes = %s
+                    WHERE id = %s
+                """, (admin_user_id, admin_notes, order_id))
+
+                connection.commit()
+                return {'success': True, 'message': f"訂單 {order['order_no']} 已駁回。"}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'駁回訂單失敗: {str(e)}'}, 500
+
+api.add_resource(StudentBankInfo, '/api/student/<int:student_id>/bank-info')
+api.add_resource(PricingOrderListResource, '/api/pricing/orders')
+api.add_resource(PricingOrderItemResource, '/api/pricing/orders/<int:order_id>')
+api.add_resource(PricingOrderConfirmResource, '/api/pricing/orders/<int:order_id>/confirm')
+api.add_resource(PricingOrderRejectResource, '/api/pricing/orders/<int:order_id>/reject')
+
+# ==========================================
+# 活動花絮與相簿管理 API
+# ==========================================
+
+class GalleryImageUpload(Resource):
+    def post(self):
+        """上傳活動花絮圖片 (支援單張或多張上傳，支援檔案或 base64)"""
+        try:
+            # 1. 支援多檔案上傳
+            uploaded_files = request.files.getlist('files')
+            if not uploaded_files:
+                single_file = request.files.get('file') or request.files.get('image')
+                if single_file:
+                    uploaded_files = [single_file]
+
+            image_urls = []
+            if uploaded_files:
+                for file in uploaded_files:
+                    if not file or not file.filename:
+                        continue
+                    ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else 'jpg'
+                    if ext not in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
+                        ext = 'jpg'
+                    safe_name = f"gallery_{int(time.time()*1000)}_{os.urandom(4).hex()}.{ext}"
+                    file_path = os.path.join(GALLERY_FOLDER, safe_name)
+                    file.save(file_path)
+                    image_urls.append(f"/api/uploads/gallery/{safe_name}")
+
+                if not image_urls:
+                    return {'error': '未收到有效的圖片檔案'}, 400
+
+                return {
+                    'success': True,
+                    'image_url': image_urls[0],
+                    'image_urls': image_urls,
+                    'count': len(image_urls),
+                    'message': f'成功上傳 {len(image_urls)} 張圖片！'
+                }, 200
+
+            # 2. 支援 JSON base64 或 raw URL
+            data = request.get_json() or {}
+            raw_url = data.get('image_url')
+            raw_base64 = data.get('image_base64') or data.get('base64')
+            if raw_url:
+                return {
+                    'success': True,
+                    'image_url': raw_url.strip(),
+                    'image_urls': [raw_url.strip()],
+                    'message': '圖片網址已加入！'
+                }, 200
+            elif raw_base64:
+                import base64
+                if ',' in raw_base64:
+                    header, base64_data = raw_base64.split(',', 1)
+                    if 'png' in header:
+                        ext = 'png'
+                    elif 'webp' in header:
+                        ext = 'webp'
+                    elif 'gif' in header:
+                        ext = 'gif'
+                    else:
+                        ext = 'jpg'
+                else:
+                    base64_data = raw_base64
+                    ext = 'jpg'
+                img_bytes = base64.b64decode(base64_data)
+                safe_name = f"gallery_{int(time.time()*1000)}_{os.urandom(4).hex()}.{ext}"
+                file_path = os.path.join(GALLERY_FOLDER, safe_name)
+                with open(file_path, 'wb') as f:
+                    f.write(img_bytes)
+                url = f"/api/uploads/gallery/{safe_name}"
+                return {
+                    'success': True,
+                    'image_url': url,
+                    'image_urls': [url],
+                    'message': '圖片上傳成功！'
+                }, 200
+            else:
+                return {'error': '未收到上傳檔案或圖片資料'}, 400
+        except Exception as e:
+            return {'error': f'圖片上傳失敗: {str(e)}'}, 500
+
+
+class GalleryAlbumListResource(Resource):
+    def get(self):
+        """取得相簿清單 (支援 ?admin=1 取得全部，預設僅取得已發布)"""
+        try:
+            is_admin = request.args.get('admin') in ['1', 'true', 'True'] or request.args.get('all') in ['1', 'true', 'True']
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                if is_admin:
+                    cursor.execute("SELECT * FROM gallery_albums ORDER BY sort_order ASC, event_date DESC, id DESC")
+                else:
+                    cursor.execute("SELECT * FROM gallery_albums WHERE is_published = 1 ORDER BY sort_order ASC, event_date DESC, id DESC")
+                albums = cursor.fetchall()
+
+                # 批次查詢所有相簿之相片
+                if albums:
+                    album_ids = [a['id'] for a in albums]
+                    format_strings = ','.join(['%s'] * len(album_ids))
+                    cursor.execute(f"""
+                        SELECT id, album_id, image_url, description, sort_order, created_at
+                        FROM gallery_photos 
+                        WHERE album_id IN ({format_strings})
+                        ORDER BY sort_order ASC, id ASC
+                    """, tuple(album_ids))
+                    all_photos = cursor.fetchall()
+                    photos_by_album = {}
+                    for p in all_photos:
+                        if p['album_id'] not in photos_by_album:
+                            photos_by_album[p['album_id']] = []
+                        photos_by_album[p['album_id']].append({
+                            'id': p['id'],
+                            'album_id': p['album_id'],
+                            'image_url': p['image_url'],
+                            'src': p['image_url'],
+                            'description': p['description'] or '',
+                            'sort_order': p['sort_order']
+                        })
+                else:
+                    photos_by_album = {}
+
+                formatted_albums = []
+                for a in albums:
+                    p_list = photos_by_album.get(a['id'], [])
+                    cover = a.get('cover_image')
+                    if not cover and p_list:
+                        cover = p_list[0]['image_url']
+                    formatted_albums.append({
+                        'id': a['id'],
+                        'title': a.get('title', ''),
+                        'description': a.get('description') or '',
+                        'cover_image': cover or '',
+                        'coverImage': cover or '',
+                        'event_date': str(a['event_date']) if a.get('event_date') else None,
+                        'sort_order': int(a.get('sort_order') or 0),
+                        'is_published': bool(a.get('is_published')),
+                        'photo_count': len(p_list),
+                        'photos': p_list,
+                        'images': p_list,
+                        'created_at': str(a['created_at']) if a.get('created_at') else None,
+                        'updated_at': str(a['updated_at']) if a.get('updated_at') else None
+                    })
+
+                return {'success': True, 'albums': formatted_albums, 'total': len(formatted_albums)}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'查詢活動花絮相簿失敗: {str(e)}'}, 500
+
+    def post(self):
+        """新增相簿"""
+        try:
+            data = request.get_json() or {}
+            title = (data.get('title') or '').strip()
+            if not title:
+                return {'error': '請輸入相簿標題'}, 400
+
+            description = (data.get('description') or '').strip()
+            cover_image = (data.get('cover_image') or data.get('coverImage') or '').strip()
+            event_date = data.get('event_date') or None
+            sort_order = int(data.get('sort_order', 0) or 0)
+            is_published = 1 if data.get('is_published', True) else 0
+            photos = data.get('photos') or []
+
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(buffered=True)
+                cursor.execute("""
+                    INSERT INTO gallery_albums (title, description, cover_image, event_date, sort_order, is_published)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (title, description, cover_image or None, event_date, sort_order, is_published))
+                album_id = cursor.lastrowid
+
+                # 若有照片資料，批量寫入
+                if photos and isinstance(photos, list):
+                    for idx, p in enumerate(photos):
+                        img_url = p.get('image_url') or p.get('src') if isinstance(p, dict) else str(p)
+                        if not img_url:
+                            continue
+                        desc = p.get('description', '') if isinstance(p, dict) else ''
+                        p_order = p.get('sort_order', idx + 1) if isinstance(p, dict) else (idx + 1)
+                        cursor.execute("""
+                            INSERT INTO gallery_photos (album_id, image_url, description, sort_order)
+                            VALUES (%s, %s, %s, %s)
+                        """, (album_id, img_url, desc, p_order))
+                    if not cover_image and photos:
+                        first_url = photos[0].get('image_url') or photos[0].get('src') if isinstance(photos[0], dict) else str(photos[0])
+                        if first_url:
+                            cursor.execute("UPDATE gallery_albums SET cover_image = %s WHERE id = %s", (first_url, album_id))
+
+                connection.commit()
+                return {'success': True, 'id': album_id, 'message': '相簿建立成功！'}, 201
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'新增相簿失敗: {str(e)}'}, 500
+
+
+class GalleryAlbumDetailResource(Resource):
+    def get(self, album_id):
+        """取得單一相簿詳情及其所有相片"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("SELECT * FROM gallery_albums WHERE id = %s", (album_id,))
+                album = cursor.fetchone()
+                if not album:
+                    return {'error': '查無此相簿'}, 404
+
+                cursor.execute("""
+                    SELECT id, album_id, image_url, description, sort_order, created_at
+                    FROM gallery_photos 
+                    WHERE album_id = %s 
+                    ORDER BY sort_order ASC, id ASC
+                """, (album_id,))
+                photos = cursor.fetchall()
+                p_list = []
+                for p in photos:
+                    p_list.append({
+                        'id': p['id'],
+                        'album_id': p['album_id'],
+                        'image_url': p['image_url'],
+                        'src': p['image_url'],
+                        'description': p['description'] or '',
+                        'sort_order': p['sort_order']
+                    })
+
+                cover = album.get('cover_image')
+                if not cover and p_list:
+                    cover = p_list[0]['image_url']
+
+                result = {
+                    'id': album['id'],
+                    'title': album.get('title', ''),
+                    'description': album.get('description') or '',
+                    'cover_image': cover or '',
+                    'coverImage': cover or '',
+                    'event_date': str(album['event_date']) if album.get('event_date') else None,
+                    'sort_order': int(album.get('sort_order') or 0),
+                    'is_published': bool(album.get('is_published')),
+                    'photo_count': len(p_list),
+                    'photos': p_list,
+                    'images': p_list,
+                    'created_at': str(album['created_at']) if album.get('created_at') else None,
+                    'updated_at': str(album['updated_at']) if album.get('updated_at') else None
+                }
+                return {'success': True, 'album': result}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'取得相簿詳情失敗: {str(e)}'}, 500
+
+    def put(self, album_id):
+        """更新相簿資訊"""
+        try:
+            data = request.get_json() or {}
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(buffered=True)
+                update_fields = []
+                values = []
+                if 'title' in data:
+                    title = str(data['title']).strip()
+                    if not title:
+                        return {'error': '相簿標題不可為空'}, 400
+                    update_fields.append("title = %s")
+                    values.append(title)
+                if 'description' in data:
+                    update_fields.append("description = %s")
+                    values.append(data['description'])
+                if 'cover_image' in data or 'coverImage' in data:
+                    cover = data.get('cover_image') if 'cover_image' in data else data.get('coverImage')
+                    update_fields.append("cover_image = %s")
+                    values.append(cover or None)
+                if 'event_date' in data:
+                    update_fields.append("event_date = %s")
+                    values.append(data['event_date'] or None)
+                if 'sort_order' in data:
+                    update_fields.append("sort_order = %s")
+                    values.append(int(data['sort_order'] or 0))
+                if 'is_published' in data:
+                    update_fields.append("is_published = %s")
+                    values.append(1 if data['is_published'] else 0)
+
+                if not update_fields:
+                    return {'error': '無可更新的欄位'}, 400
+
+                values.append(album_id)
+                cursor.execute(f"UPDATE gallery_albums SET {', '.join(update_fields)} WHERE id = %s", tuple(values))
+                connection.commit()
+                return {'success': True, 'message': '相簿資料更新成功！'}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'更新相簿失敗: {str(e)}'}, 500
+
+    def delete(self, album_id):
+        """刪除相簿 (級聯刪除照片)"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(buffered=True)
+                cursor.execute("DELETE FROM gallery_albums WHERE id = %s", (album_id,))
+                connection.commit()
+                return {'success': True, 'message': '相簿已成功刪除！'}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'刪除相簿失敗: {str(e)}'}, 500
+
+
+class GalleryAlbumPhotosResource(Resource):
+    def post(self, album_id):
+        """為特定相簿批量新增照片"""
+        try:
+            data = request.get_json() or {}
+            photos_to_add = []
+            if 'photos' in data and isinstance(data['photos'], list):
+                photos_to_add = data['photos']
+            elif 'image_url' in data:
+                photos_to_add = [{
+                    'image_url': data['image_url'],
+                    'description': data.get('description', ''),
+                    'sort_order': data.get('sort_order', 0)
+                }]
+            elif 'image_urls' in data and isinstance(data['image_urls'], list):
+                for url in data['image_urls']:
+                    photos_to_add.append({'image_url': url, 'description': '', 'sort_order': 0})
+
+            if not photos_to_add:
+                return {'error': '請提供要新增的照片資料'}, 400
+
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("SELECT id, cover_image FROM gallery_albums WHERE id = %s", (album_id,))
+                album = cursor.fetchone()
+                if not album:
+                    return {'error': '查無此相簿'}, 404
+
+                # 取得目前相簿最大 sort_order
+                cursor.execute("SELECT COALESCE(MAX(sort_order), 0) as max_order FROM gallery_photos WHERE album_id = %s", (album_id,))
+                max_order = cursor.fetchone()['max_order'] or 0
+
+                inserted_photos = []
+                for idx, p in enumerate(photos_to_add):
+                    img_url = p.get('image_url') or p.get('src') if isinstance(p, dict) else str(p)
+                    if not img_url:
+                        continue
+                    desc = p.get('description', '') if isinstance(p, dict) else ''
+                    p_order = p.get('sort_order') if (isinstance(p, dict) and p.get('sort_order') is not None) else (max_order + idx + 1)
+                    cursor.execute("""
+                        INSERT INTO gallery_photos (album_id, image_url, description, sort_order)
+                        VALUES (%s, %s, %s, %s)
+                    """, (album_id, img_url, desc, p_order))
+                    new_id = cursor.lastrowid
+                    inserted_photos.append({
+                        'id': new_id,
+                        'album_id': album_id,
+                        'image_url': img_url,
+                        'src': img_url,
+                        'description': desc,
+                        'sort_order': p_order
+                    })
+
+                # 若相簿尚未設定封面照，自動將第一張上傳的照片設為封面
+                if not album.get('cover_image') and inserted_photos:
+                    cursor.execute("UPDATE gallery_albums SET cover_image = %s WHERE id = %s", (inserted_photos[0]['image_url'], album_id))
+
+                connection.commit()
+                return {
+                    'success': True,
+                    'message': f'成功新增 {len(inserted_photos)} 張相片！',
+                    'count': len(inserted_photos),
+                    'photos': inserted_photos
+                }, 201
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'新增照片失敗: {str(e)}'}, 500
+
+
+class GalleryPhotoDetailResource(Resource):
+    def put(self, photo_id):
+        """更新單張照片資訊 (描述、排序)"""
+        try:
+            data = request.get_json() or {}
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(buffered=True)
+                update_fields = []
+                values = []
+                if 'description' in data:
+                    update_fields.append("description = %s")
+                    values.append(data['description'])
+                if 'sort_order' in data:
+                    update_fields.append("sort_order = %s")
+                    values.append(int(data['sort_order'] or 0))
+
+                if not update_fields:
+                    return {'error': '無可更新欄位'}, 400
+
+                values.append(photo_id)
+                cursor.execute(f"UPDATE gallery_photos SET {', '.join(update_fields)} WHERE id = %s", tuple(values))
+                connection.commit()
+                return {'success': True, 'message': '照片資料更新成功！'}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'更新照片失敗: {str(e)}'}, 500
+
+    def delete(self, photo_id):
+        """刪除單張照片"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("SELECT * FROM gallery_photos WHERE id = %s", (photo_id,))
+                photo = cursor.fetchone()
+                if not photo:
+                    return {'error': '查無此照片'}, 404
+
+                album_id = photo['album_id']
+                photo_url = photo['image_url']
+
+                cursor.execute("DELETE FROM gallery_photos WHERE id = %s", (photo_id,))
+
+                # 檢查若此照片為相簿封面，更換為相簿內其他照片或 NULL
+                cursor.execute("SELECT cover_image FROM gallery_albums WHERE id = %s", (album_id,))
+                alb = cursor.fetchone()
+                if alb and alb.get('cover_image') == photo_url:
+                    cursor.execute("SELECT image_url FROM gallery_photos WHERE album_id = %s ORDER BY sort_order ASC, id ASC LIMIT 1", (album_id,))
+                    next_photo = cursor.fetchone()
+                    new_cover = next_photo['image_url'] if next_photo else None
+                    cursor.execute("UPDATE gallery_albums SET cover_image = %s WHERE id = %s", (new_cover, album_id))
+
+                connection.commit()
+                return {'success': True, 'message': '照片已成功刪除！'}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'刪除照片失敗: {str(e)}'}, 500
+
+
+class GalleryAlbumCoverResource(Resource):
+    def put(self, album_id):
+        """設定相簿封面照片"""
+        try:
+            data = request.get_json() or {}
+            cover_image = data.get('cover_image') or data.get('coverImage') or data.get('image_url')
+            photo_id = data.get('photo_id')
+
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                if not cover_image and photo_id:
+                    cursor.execute("SELECT image_url FROM gallery_photos WHERE id = %s", (photo_id,))
+                    p = cursor.fetchone()
+                    if p:
+                        cover_image = p['image_url']
+
+                if not cover_image:
+                    return {'error': '請提供封面圖片網址或照片 ID'}, 400
+
+                cursor.execute("UPDATE gallery_albums SET cover_image = %s WHERE id = %s", (cover_image, album_id))
+                connection.commit()
+                return {'success': True, 'cover_image': cover_image, 'message': '封面照片已更新！'}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'設定封面照片失敗: {str(e)}'}, 500
+
+api.add_resource(GalleryImageUpload, '/api/upload/gallery-image', '/api/gallery/upload')
+api.add_resource(GalleryAlbumListResource, '/api/gallery/albums')
+api.add_resource(GalleryAlbumDetailResource, '/api/gallery/albums/<int:album_id>')
+api.add_resource(GalleryAlbumPhotosResource, '/api/gallery/albums/<int:album_id>/photos')
+api.add_resource(GalleryPhotoDetailResource, '/api/gallery/photos/<int:photo_id>')
+api.add_resource(GalleryAlbumCoverResource, '/api/gallery/albums/<int:album_id>/cover')
+
+class BannerImageUploadResource(Resource):
+    def post(self):
+        """上傳首頁橫幅圖片"""
+        try:
+            file = request.files.get('file') or request.files.get('image')
+            image_url = None
+            if file and file.filename:
+                ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else 'jpg'
+                if ext not in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
+                    return {'error': '僅支援 JPG, PNG, GIF, WEBP 圖片格式'}, 400
+                safe_name = f"banner_{int(time.time() * 1000)}_{os.urandom(4).hex()}.{ext}"
+                file_path = os.path.join(BANNERS_FOLDER, safe_name)
+                file.save(file_path)
+                image_url = f"/api/uploads/banners/{safe_name}"
+            else:
+                data = request.get_json() or {}
+                raw_url = data.get('image_url') or data.get('url')
+                raw_base64 = data.get('image_base64') or data.get('base64')
+                if raw_url:
+                    image_url = raw_url.strip()
+                elif raw_base64:
+                    import base64
+                    if ',' in raw_base64:
+                        header, base64_data = raw_base64.split(',', 1)
+                        if 'png' in header:
+                            ext = 'png'
+                        elif 'webp' in header:
+                            ext = 'webp'
+                        elif 'gif' in header:
+                            ext = 'gif'
+                        else:
+                            ext = 'jpg'
+                    else:
+                        base64_data = raw_base64
+                        ext = 'jpg'
+                    img_bytes = base64.b64decode(base64_data)
+                    safe_name = f"banner_{int(time.time() * 1000)}_{os.urandom(4).hex()}.{ext}"
+                    file_path = os.path.join(BANNERS_FOLDER, safe_name)
+                    with open(file_path, 'wb') as f:
+                        f.write(img_bytes)
+                    image_url = f"/api/uploads/banners/{safe_name}"
+                else:
+                    return {'error': '未收到上傳檔案或圖片資料'}, 400
+
+            return {
+                'success': True,
+                'image_url': image_url,
+                'message': '橫幅圖片上傳成功！'
+            }, 200
+        except Exception as e:
+            return {'error': f'橫幅圖片上傳失敗: {str(e)}'}, 500
+
+
+class BannerListResource(Resource):
+    def get(self):
+        """取得首頁橫幅清單 (支援 ?admin=1 或 ?all=1 取得全部，包含已停用)"""
+        try:
+            is_admin = request.args.get('admin') in ['1', 'true', 'True'] or request.args.get('all') in ['1', 'true', 'True']
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                if is_admin:
+                    cursor.execute("SELECT * FROM banners ORDER BY sort_order ASC, id ASC")
+                else:
+                    cursor.execute("SELECT * FROM banners WHERE is_active = 1 ORDER BY sort_order ASC, id ASC")
+                rows = cursor.fetchall()
+
+                banners = []
+                for r in rows:
+                    banners.append({
+                        'id': r['id'],
+                        'title': r.get('title') or '',
+                        'subtitle': r.get('subtitle') or '',
+                        'badge_text': r.get('badge_text') or '',
+                        'badge_color': r.get('badge_color') or 'warning',
+                        'image_url': r.get('image_url') or '',
+                        'primary_button_text': r.get('primary_button_text') or '',
+                        'primary_button_link': r.get('primary_button_link') or '',
+                        'primary_button_style': r.get('primary_button_style') or 'primary',
+                        'secondary_button_text': r.get('secondary_button_text') or '',
+                        'secondary_button_link': r.get('secondary_button_link') or '',
+                        'secondary_button_style': r.get('secondary_button_style') or 'outline-light',
+                        'interval_ms': int(r.get('interval_ms') or 5000),
+                        'sort_order': int(r.get('sort_order') or 0),
+                        'is_active': bool(r.get('is_active')),
+                        'created_at': str(r['created_at']) if r.get('created_at') else None,
+                        'updated_at': str(r['updated_at']) if r.get('updated_at') else None
+                    })
+
+                return {'success': True, 'banners': banners, 'total': len(banners)}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'查詢首頁橫幅失敗: {str(e)}'}, 500
+
+    def post(self):
+        """新增首頁橫幅"""
+        try:
+            data = request.get_json() or {}
+            title = (data.get('title') or '').strip()
+            image_url = (data.get('image_url') or '').strip()
+
+            if not title:
+                return {'error': '請輸入橫幅主標題'}, 400
+            if not image_url:
+                return {'error': '請提供或上傳背景圖片'}, 400
+
+            subtitle = (data.get('subtitle') or '').strip()
+            badge_text = (data.get('badge_text') or '').strip()
+            badge_color = (data.get('badge_color') or 'warning').strip()
+            primary_button_text = (data.get('primary_button_text') or '').strip()
+            primary_button_link = (data.get('primary_button_link') or '').strip()
+            primary_button_style = (data.get('primary_button_style') or 'primary').strip()
+            secondary_button_text = (data.get('secondary_button_text') or '').strip()
+            secondary_button_link = (data.get('secondary_button_link') or '').strip()
+            secondary_button_style = (data.get('secondary_button_style') or 'outline-light').strip()
+            interval_ms = int(data.get('interval_ms') or 5000)
+            sort_order = int(data.get('sort_order') or 0)
+            is_active = 1 if data.get('is_active', True) else 0
+
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(buffered=True)
+                cursor.execute("""
+                    INSERT INTO banners (
+                        title, subtitle, badge_text, badge_color, image_url,
+                        primary_button_text, primary_button_link, primary_button_style,
+                        secondary_button_text, secondary_button_link, secondary_button_style,
+                        interval_ms, sort_order, is_active
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    title, subtitle or None, badge_text or None, badge_color, image_url,
+                    primary_button_text or None, primary_button_link or None, primary_button_style,
+                    secondary_button_text or None, secondary_button_link or None, secondary_button_style,
+                    interval_ms, sort_order, is_active
+                ))
+                connection.commit()
+                banner_id = cursor.lastrowid
+                return {'success': True, 'id': banner_id, 'message': '首頁橫幅新增成功！'}, 201
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'新增橫幅失敗: {str(e)}'}, 500
+
+
+class BannerDetailResource(Resource):
+    def get(self, banner_id):
+        """取得單一橫幅資料"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("SELECT * FROM banners WHERE id = %s", (banner_id,))
+                r = cursor.fetchone()
+                if not r:
+                    return {'error': '找不到此橫幅'}, 404
+
+                banner = {
+                    'id': r['id'],
+                    'title': r.get('title') or '',
+                    'subtitle': r.get('subtitle') or '',
+                    'badge_text': r.get('badge_text') or '',
+                    'badge_color': r.get('badge_color') or 'warning',
+                    'image_url': r.get('image_url') or '',
+                    'primary_button_text': r.get('primary_button_text') or '',
+                    'primary_button_link': r.get('primary_button_link') or '',
+                    'primary_button_style': r.get('primary_button_style') or 'primary',
+                    'secondary_button_text': r.get('secondary_button_text') or '',
+                    'secondary_button_link': r.get('secondary_button_link') or '',
+                    'secondary_button_style': r.get('secondary_button_style') or 'outline-light',
+                    'interval_ms': int(r.get('interval_ms') or 5000),
+                    'sort_order': int(r.get('sort_order') or 0),
+                    'is_active': bool(r.get('is_active')),
+                    'created_at': str(r['created_at']) if r.get('created_at') else None,
+                    'updated_at': str(r['updated_at']) if r.get('updated_at') else None
+                }
+                return {'success': True, 'banner': banner}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'查詢橫幅失敗: {str(e)}'}, 500
+
+    def put(self, banner_id):
+        """修改橫幅資料"""
+        try:
+            data = request.get_json() or {}
+            title = (data.get('title') or '').strip()
+            image_url = (data.get('image_url') or '').strip()
+
+            if not title:
+                return {'error': '請輸入橫幅主標題'}, 400
+            if not image_url:
+                return {'error': '請提供背景圖片'}, 400
+
+            subtitle = (data.get('subtitle') or '').strip()
+            badge_text = (data.get('badge_text') or '').strip()
+            badge_color = (data.get('badge_color') or 'warning').strip()
+            primary_button_text = (data.get('primary_button_text') or '').strip()
+            primary_button_link = (data.get('primary_button_link') or '').strip()
+            primary_button_style = (data.get('primary_button_style') or 'primary').strip()
+            secondary_button_text = (data.get('secondary_button_text') or '').strip()
+            secondary_button_link = (data.get('secondary_button_link') or '').strip()
+            secondary_button_style = (data.get('secondary_button_style') or 'outline-light').strip()
+            interval_ms = int(data.get('interval_ms') or 5000)
+            sort_order = int(data.get('sort_order') or 0)
+            is_active = 1 if data.get('is_active', True) else 0
+
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(buffered=True)
+                cursor.execute("""
+                    UPDATE banners SET
+                        title = %s,
+                        subtitle = %s,
+                        badge_text = %s,
+                        badge_color = %s,
+                        image_url = %s,
+                        primary_button_text = %s,
+                        primary_button_link = %s,
+                        primary_button_style = %s,
+                        secondary_button_text = %s,
+                        secondary_button_link = %s,
+                        secondary_button_style = %s,
+                        interval_ms = %s,
+                        sort_order = %s,
+                        is_active = %s
+                    WHERE id = %s
+                """, (
+                    title, subtitle or None, badge_text or None, badge_color, image_url,
+                    primary_button_text or None, primary_button_link or None, primary_button_style,
+                    secondary_button_text or None, secondary_button_link or None, secondary_button_style,
+                    interval_ms, sort_order, is_active,
+                    banner_id
+                ))
+                connection.commit()
+                return {'success': True, 'message': '橫幅已更新！'}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'更新橫幅失敗: {str(e)}'}, 500
+
+    def delete(self, banner_id):
+        """刪除橫幅"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(buffered=True)
+                cursor.execute("DELETE FROM banners WHERE id = %s", (banner_id,))
+                connection.commit()
+                return {'success': True, 'message': '橫幅已成功刪除！'}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'刪除橫幅失敗: {str(e)}'}, 500
+
+
+class BannerToggleActiveResource(Resource):
+    def post(self, banner_id):
+        """切換橫幅啟用/停用狀態"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("SELECT is_active FROM banners WHERE id = %s", (banner_id,))
+                row = cursor.fetchone()
+                if not row:
+                    return {'error': '查無此橫幅'}, 404
+                new_state = 0 if row['is_active'] else 1
+                cursor.execute("UPDATE banners SET is_active = %s WHERE id = %s", (new_state, banner_id))
+                connection.commit()
+                return {
+                    'success': True,
+                    'is_active': bool(new_state),
+                    'message': f"橫幅已{'啟用發布' if new_state else '下架停用'}！"
+                }, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'切換橫幅狀態失敗: {str(e)}'}, 500
+
+api.add_resource(BannerImageUploadResource, '/api/upload/banner-image', '/api/banners/upload')
+api.add_resource(BannerListResource, '/api/banners')
+api.add_resource(BannerDetailResource, '/api/banners/<int:banner_id>')
+api.add_resource(BannerToggleActiveResource, '/api/banners/<int:banner_id>/toggle')
+
+class PageBannerListResource(Resource):
+    def get(self):
+        """取得所有子頁面頂部橫幅設定"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("SELECT * FROM page_banners ORDER BY page_key ASC")
+                rows = cursor.fetchall()
+
+                banners_map = {}
+                banners_list = []
+                for r in rows:
+                    item = {
+                        'page_key': r['page_key'],
+                        'page_name': r.get('page_name') or r['page_key'],
+                        'title': r.get('title') or '',
+                        'subtitle': r.get('subtitle') or '',
+                        'image_url': r.get('image_url') or '',
+                        'updated_at': str(r['updated_at']) if r.get('updated_at') else None
+                    }
+                    banners_map[r['page_key']] = item
+                    banners_list.append(item)
+
+                return {'success': True, 'banners': banners_list, 'banners_map': banners_map, 'total': len(banners_list)}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'查詢各頁橫幅失敗: {str(e)}'}, 500
+
+
+class PageBannerDetailResource(Resource):
+    def get(self, page_key):
+        """取得單一子頁面橫幅設定"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("SELECT * FROM page_banners WHERE page_key = %s", (page_key,))
+                r = cursor.fetchone()
+                if not r:
+                    return {'error': f'找不到頁面 {page_key} 的橫幅設定'}, 404
+
+                banner = {
+                    'page_key': r['page_key'],
+                    'page_name': r.get('page_name') or r['page_key'],
+                    'title': r.get('title') or '',
+                    'subtitle': r.get('subtitle') or '',
+                    'image_url': r.get('image_url') or '',
+                    'updated_at': str(r['updated_at']) if r.get('updated_at') else None
+                }
+                return {'success': True, 'banner': banner}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'查詢頁面橫幅失敗: {str(e)}'}, 500
+
+    def put(self, page_key):
+        """更新單一子頁面橫幅設定 (upsert)"""
+        try:
+            data = request.get_json() or {}
+            title = (data.get('title') or '').strip()
+            image_url = (data.get('image_url') or '').strip()
+            subtitle = (data.get('subtitle') or '').strip()
+            page_name = (data.get('page_name') or page_key).strip()
+
+            if not title:
+                return {'error': '請輸入橫幅標題'}, 400
+            if not image_url:
+                return {'error': '請提供背景圖片網址'}, 400
+
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(buffered=True)
+                cursor.execute("""
+                    INSERT INTO page_banners (page_key, page_name, title, subtitle, image_url)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        page_name = VALUES(page_name),
+                        title = VALUES(title),
+                        subtitle = VALUES(subtitle),
+                        image_url = VALUES(image_url)
+                """, (page_key, page_name, title, subtitle or None, image_url))
+                connection.commit()
+                return {'success': True, 'message': '頁面橫幅已更新！'}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'更新頁面橫幅失敗: {str(e)}'}, 500
+
+api.add_resource(PageBannerListResource, '/api/page-banners')
+api.add_resource(PageBannerDetailResource, '/api/page-banners/<string:page_key>')
 
 if __name__ == '__main__':
     # 初始化資料庫表格

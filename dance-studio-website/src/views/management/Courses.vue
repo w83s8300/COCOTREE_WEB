@@ -49,7 +49,15 @@
             <td>{{ course.style_name || '未指定' }}</td>
             <td>{{ course.duration_minutes }} 分鐘</td>
             <td>{{ course.max_students }} 人</td>
-            <td>{{ course.price ? `${course.price} 堂` : '-' }}</td>
+            <td>
+              <div class="fw-bold">{{ course.price ? `${course.price} 堂` : '-' }}</div>
+              <span v-if="course.allow_monthly_pass !== false && course.allow_monthly_pass !== 0" class="badge bg-info-subtle text-info border border-info-subtle mt-1" style="font-size: 0.72rem;">
+                🌟 支援月費
+              </span>
+              <span v-else class="badge bg-light text-muted border mt-1" style="font-size: 0.72rem;">
+                僅限堂數
+              </span>
+            </td>
             <td>{{ course.teacher_name || '未指定' }}</td>
             <td v-if="canViewSalary">
               <div v-if="course.base_salary || course.low_student_threshold || course.extra_student_fee || course.salary_cap" class="small">

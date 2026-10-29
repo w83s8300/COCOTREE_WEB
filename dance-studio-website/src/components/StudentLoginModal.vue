@@ -107,6 +107,29 @@
                 </button>
               </div>
 
+              <!-- LINE 快速登入分隔線 -->
+              <div class="d-flex align-items-center my-3">
+                <hr class="flex-grow-1 my-0 text-muted" />
+                <span class="px-2 text-muted small fw-bold">或使用第三方帳號</span>
+                <hr class="flex-grow-1 my-0 text-muted" />
+              </div>
+
+              <!-- LINE 快速登入按鈕 -->
+              <div class="d-grid mb-2">
+                <button
+                  type="button"
+                  class="btn btn-line-login py-2 fw-bold d-flex align-items-center justify-content-center gap-2 shadow-sm"
+                  :disabled="lineLoggingIn"
+                  @click="handleLineQuickLogin"
+                >
+                  <span v-if="lineLoggingIn" class="spinner-border spinner-border-sm"></span>
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 5.92 2 10.76c0 3.08 1.83 5.79 4.67 7.31-.2.72-.73 2.61-.84 3.01-.13.49.18.48.38.35.16-.11 2.22-1.51 3.12-2.13.88.24 1.78.37 2.67.37 5.52 0 10-3.92 10-8.91S17.52 2 12 2zm5.72 11.59h-2.17c-.24 0-.43-.19-.43-.43V8.84c0-.24.19-.43.43-.43h2.17c.24 0 .43.19.43.43v.68c0 .24-.19.43-.43.43h-1.31v.96h1.31c.24 0 .43.19.43.43v.68c0 .24-.19.43-.43.43h-1.31v.97h1.31c.24 0 .43.19.43.43v.68c0 .23-.19.42-.43.42zm-3.52-.43c0 .24-.19.43-.43.43h-.68c-.24 0-.43-.19-.43-.43V8.84c0-.24.19-.43.43-.43h.68c.24 0 .43.19.43.43v4.32zm-2.22 0c0 .18-.11.34-.27.4-.05.02-.11.03-.16.03-.12 0-.23-.05-.31-.13l-1.92-2.61v2.31c0 .24-.19.43-.43.43h-.68c-.24 0-.43-.19-.43-.43V8.84c0-.18.11-.34.27-.4.16-.06.35-.03.47.1l1.92 2.61V8.84c0-.24.19-.43.43-.43h.68c.24 0 .43.19.43.43v4.32zm-4.71 0c0 .24-.19.43-.43.43H4.7c-.24 0-.43-.19-.43-.43V8.84c0-.24.19-.43.43-.43h.68c.24 0 .43.19.43.43v3.46h1.01c.24 0 .43.19.43.43v.43z"/>
+                  </svg>
+                  <span>使用 LINE 快速登入</span>
+                </button>
+              </div>
+
               <!-- 提示前往註冊 -->
               <div class="text-center mt-3 pt-2 border-top">
                 <span class="text-muted small">還不是會員？</span>
@@ -421,7 +444,8 @@ export default {
         emergency_phone: ''
       },
       showRegPassword: false,
-      showMoreFields: false
+      showMoreFields: false,
+      lineLoggingIn: false
     }
   },
   watch: {
@@ -548,6 +572,24 @@ export default {
         this.loading = false
       }
     },
+    async handleLineQuickLogin() {
+      this.lineLoggingIn = true
+      try {
+        const redirectUri = window.location.origin + '/line-callback'
+        const state = `login:${Date.now()}`
+        const res = await api.get(`/line/auth-url?redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`)
+
+        if (res.success && res.configured && res.auth_url) {
+          window.location.href = res.auth_url
+        } else {
+          showToast(res.message || '尚未設定 LINE Login Channel ID，請至管理後台設定！', 'warning')
+        }
+      } catch (err) {
+        showToast(err.message || '啟動 LINE 登入失敗', 'error')
+      } finally {
+        this.lineLoggingIn = false
+      }
+    },
     async handleCheckFirstLoginPhone() {
       const cleanPhone = this.phone.trim()
       if (!cleanPhone) {
@@ -583,6 +625,24 @@ export default {
         this.loading = false
       }
     },
+    async handleLineQuickLogin() {
+      this.lineLoggingIn = true
+      try {
+        const redirectUri = window.location.origin + '/line-callback'
+        const state = `login:${Date.now()}`
+        const res = await api.get(`/line/auth-url?redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`)
+
+        if (res.success && res.configured && res.auth_url) {
+          window.location.href = res.auth_url
+        } else {
+          showToast(res.message || '尚未設定 LINE Login Channel ID，請至管理後台設定！', 'warning')
+        }
+      } catch (err) {
+        showToast(err.message || '啟動 LINE 登入失敗', 'error')
+      } finally {
+        this.lineLoggingIn = false
+      }
+    },
     async handleFirstLogin() {
       if (!this.newPassword || this.newPassword.length < 4) {
         this.errorMessage = '密碼長度至少需要 4 碼'
@@ -613,6 +673,24 @@ export default {
         this.errorMessage = err.message || '設定密碼失敗，請稍後再試'
       } finally {
         this.loading = false
+      }
+    },
+    async handleLineQuickLogin() {
+      this.lineLoggingIn = true
+      try {
+        const redirectUri = window.location.origin + '/line-callback'
+        const state = `login:${Date.now()}`
+        const res = await api.get(`/line/auth-url?redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`)
+
+        if (res.success && res.configured && res.auth_url) {
+          window.location.href = res.auth_url
+        } else {
+          showToast(res.message || '尚未設定 LINE Login Channel ID，請至管理後台設定！', 'warning')
+        }
+      } catch (err) {
+        showToast(err.message || '啟動 LINE 登入失敗', 'error')
+      } finally {
+        this.lineLoggingIn = false
       }
     },
     async handleRegister() {
@@ -661,12 +739,41 @@ export default {
       } finally {
         this.loading = false
       }
+    },
+    async handleLineQuickLogin() {
+      this.lineLoggingIn = true
+      try {
+        const redirectUri = window.location.origin + '/line-callback'
+        const state = `login:${Date.now()}`
+        const res = await api.get(`/line/auth-url?redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`)
+
+        if (res.success && res.configured && res.auth_url) {
+          window.location.href = res.auth_url
+        } else {
+          showToast(res.message || '尚未設定 LINE Login Channel ID，請至管理後台設定！', 'warning')
+        }
+      } catch (err) {
+        showToast(err.message || '啟動 LINE 登入失敗', 'error')
+      } finally {
+        this.lineLoggingIn = false
+      }
     }
   }
 }
 </script>
 
 <style scoped>
+.btn-line-login {
+  background-color: #06C755;
+  color: #fff;
+  border: none;
+  transition: all 0.2s ease;
+}
+.btn-line-login:hover {
+  background-color: #05a847;
+  color: #fff;
+}
+
 .modal-backdrop-custom {
   position: fixed;
   top: 0;

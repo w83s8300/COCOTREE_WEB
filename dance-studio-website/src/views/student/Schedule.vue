@@ -50,8 +50,8 @@
         <table class="table table-bordered table-striped text-center schedule-table align-middle">
           <thead class="table-dark">
             <tr>
-              <th scope="col" style="width: 120px;">時間</th>
-              <th scope="col" v-for="(day, index) in daysOfWeek" :key="index">
+              <th scope="col" style="width: 85px;">時間</th>
+              <th scope="col" v-for="(day, index) in daysOfWeek" :key="index" style="width: calc((100% - 85px) / 7);">
                 {{ day }}<br/>
                 <small class="text-light-50">{{ getDateForDay(index) }}</small>
               </th>
@@ -195,8 +195,8 @@
               class="schedule-card-mobile p-0 mb-3 rounded-3 cursor-pointer shadow-sm border overflow-hidden bg-white d-flex text-start"
               @click="openModal(lesson)"
             >
-              <!-- 1/3 圖片區塊 (佔 3 分之一) -->
-              <div class="card-img-col flex-shrink-0 position-relative" style="width: 33.333%; min-height: 115px;">
+              <!-- 圖片區塊 -->
+              <div class="card-img-col flex-shrink-0 position-relative">
                 <img 
                   v-if="lesson.teacher_avatar" 
                   :src="lesson.teacher_avatar" 
@@ -208,8 +208,8 @@
                 </div>
               </div>
 
-              <!-- 2/3 內容區塊 (佔 3 分之二) -->
-              <div class="card-content-col p-3 d-flex flex-column justify-content-between flex-grow-1" style="width: 66.667%; min-width: 0;">
+              <!-- 內容區塊 -->
+              <div class="card-content-col d-flex flex-column justify-content-between flex-grow-1">
                 <div>
                   <div class="d-flex justify-content-between align-items-center mb-1">
                     <span class="badge bg-light text-dark border px-2 py-1 small">
@@ -272,8 +272,8 @@
                 class="schedule-card-mobile p-0 mb-2 rounded-3 cursor-pointer shadow-sm border overflow-hidden bg-white d-flex text-start"
                 @click="openModal(lesson)"
               >
-                <!-- 1/3 圖片區塊 (佔 3 分之一) -->
-                <div class="card-img-col flex-shrink-0 position-relative" style="width: 33.333%; min-height: 105px;">
+                <!-- 圖片區塊 -->
+                <div class="card-img-col flex-shrink-0 position-relative">
                   <img 
                     v-if="lesson.teacher_avatar" 
                     :src="lesson.teacher_avatar" 
@@ -285,8 +285,8 @@
                   </div>
                 </div>
 
-                <!-- 2/3 內容區塊 (佔 3 分之二) -->
-                <div class="card-content-col p-2 p-sm-3 d-flex flex-column justify-content-between flex-grow-1" style="width: 66.667%; min-width: 0;">
+                <!-- 內容區塊 -->
+                <div class="card-content-col d-flex flex-column justify-content-between flex-grow-1">
                   <div>
                     <div class="d-flex justify-content-between align-items-center mb-1">
                       <span class="badge bg-light text-dark border small fw-bold">{{ lesson.time }}</span>
@@ -400,7 +400,13 @@
                       </div>
                       <div class="d-flex justify-content-between align-items-center text-muted small">
                         <span>預約扣除：</span>
-                        <span class="text-danger fw-bold">-{{ selectedLesson.course_price || 1 }} 堂</span>
+                        <span v-if="isMonthlyPassApplicable" class="badge bg-success-subtle text-success border border-success-subtle fs-6">
+                          🌟 0 堂（月費暢跳特權）
+                        </span>
+                        <span v-else class="text-danger fw-bold">-{{ selectedLesson.course_price || 1 }} 堂</span>
+                      </div>
+                      <div v-if="isMonthlyPassApplicable" class="small text-success mt-2 pt-2 border-top">
+                        <i class="bi bi-stars me-1"></i>您擁有有效「月費」資格，此課程適用月費暢跳，本次預約免扣堂數！
                       </div>
                     </div>
                   </div>
@@ -528,6 +534,24 @@ export default {
     currentStudent() {
       return this.auth.state.student;
     },
+    hasActiveMonthlyPass() {
+      const exp = this.currentStudent?.monthly_pass_expiry;
+      if (!exp) return false;
+      try {
+        const d = new Date(exp);
+        if (isNaN(d.getTime())) return false;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return d >= today;
+      } catch (e) {
+        return false;
+      }
+    },
+    isMonthlyPassApplicable() {
+      if (!this.hasActiveMonthlyPass) return false;
+      if (!this.selectedLesson) return false;
+      return this.selectedLesson.allow_monthly_pass !== false && this.selectedLesson.allow_monthly_pass !== 0;
+    },
     isAlreadyEnrolled() {
       if (!this.selectedLesson || !this.isLoggedIn) return false;
       return this.myEnrolledScheduleIds.includes(this.selectedLesson.schedule_id);
@@ -618,6 +642,7 @@ export default {
               schedule_date: s.schedule_date,
               schedule_id: s.id,
               course_price: s.course_price || 1,
+              allow_monthly_pass: s.allow_monthly_pass !== false && s.allow_monthly_pass !== 0,
               enrollment_count: s.enrollment_count || 0,
               course_capacity: s.course_capacity || 15,
               is_full: (s.enrollment_count || 0) >= (s.course_capacity || 15)
@@ -825,7 +850,7 @@ export default {
         };
         const result = await api.post(API_ENDPOINTS.ENROLLMENTS, payload);
         if (result.success) {
-          showToast('預約報名成功！期待在課堂上遇見您。', 'success');
+          showToast(result.message || '預約報名成功！期待在課堂上遇見您。', 'success');
           // If logged in, refresh profile to update remaining classes and enrollments
           if (this.isLoggedIn) {
             await this.auth.refreshProfile();
@@ -853,10 +878,13 @@ export default {
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
   border-radius: 8px;
   overflow: hidden;
+  table-layout: fixed; /* 固定欄寬，確保每天卡片寬度完全一致 */
+  width: 100%;
+  min-width: 980px;
 }
 
 .schedule-table th {
-  padding: 12px 6px;
+  padding: 10px 4px;
   font-weight: 600;
   vertical-align: middle;
 }
@@ -864,7 +892,7 @@ export default {
 .schedule-table td {
   vertical-align: top;
   padding: 4px;
-  min-height: 80px;
+  box-sizing: border-box;
 }
 
 .time-slot {
@@ -872,19 +900,28 @@ export default {
   font-weight: 600;
   writing-mode: vertical-rl;
   text-orientation: mixed;
-  min-width: 50px;
+  width: 85px !important;
+  min-width: 85px !important;
+  max-width: 85px !important;
   vertical-align: middle !important;
 }
 
+/* 桌機版課程卡片：嚴格固定寬度與高度 */
 .schedule-cell {
   background: #ffffff;
   color: #212529;
   border: 1px solid #dee2e6;
   border-radius: 6px;
   margin-bottom: 6px;
-  min-height: 90px;
+  height: 112px; /* 固定卡片高度加大至 112px */
+  min-height: 112px;
+  max-height: 112px;
+  width: 100%;
+  box-sizing: border-box;
   transition: all 0.2s ease;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  display: flex;
 }
 
 .schedule-cell:hover {
@@ -893,16 +930,116 @@ export default {
   border-color: #adb5bd;
 }
 
+.schedule-cell .card-img-col {
+  width: 36% !important;
+  min-width: 36% !important;
+  max-width: 36% !important;
+  height: 100% !important;
+  flex-shrink: 0;
+  overflow: hidden;
+  position: relative;
+  background-color: #f1f3f5;
+}
+
+.schedule-cell .card-img-col img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.schedule-cell .card-content-col {
+  width: 64% !important;
+  min-width: 64% !important;
+  max-width: 64% !important;
+  height: 100% !important;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.schedule-cell .lesson-name {
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.25;
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.schedule-cell .lesson-teacher {
+  font-size: 0.75rem;
+  line-height: 1.2;
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 行動版卡片：加大尺寸並嚴格固定高度，完整呈現內容與底欄 */
 .schedule-card-mobile {
   background: #ffffff !important;
   color: #212529 !important;
   border: 1px solid #dee2e6;
+  border-radius: 12px;
+  height: 154px; /* 手機版固定卡片高度加大至 154px */
+  min-height: 154px;
+  max-height: 154px;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
   transition: all 0.2s ease;
+  display: flex;
 }
 
 .schedule-card-mobile:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12) !important;
+}
+
+.schedule-card-mobile .card-img-col {
+  width: 135px !important;
+  min-width: 135px !important;
+  max-width: 135px !important;
+  height: 100% !important;
+  flex-shrink: 0;
+  overflow: hidden;
+  position: relative;
+  background-color: #f1f3f5;
+}
+
+.schedule-card-mobile .card-img-col img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.schedule-card-mobile .card-content-col {
+  flex-grow: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.schedule-card-mobile h5,
+.schedule-card-mobile h6 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
 }
 
 .cursor-pointer {

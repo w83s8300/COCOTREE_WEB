@@ -1,11 +1,16 @@
 <template>
   <div class="schedules">
     <!-- 標題和新增按鈕 -->
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <h2>課程時間表管理</h2>
-      <button @click="addNewSchedule" class="btn btn-success">
-        <i class="bi bi-plus-lg me-1"></i>新增課程時間表
-      </button>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+      <h2 class="mb-0">課程時間表管理</h2>
+      <div class="d-flex align-items-center gap-2">
+        <router-link to="/admin/teacher-attendance" class="btn btn-success fw-bold shadow-sm">
+          <i class="bi bi-clock-history me-1"></i>老師授課打卡
+        </router-link>
+        <button @click="addNewSchedule" class="btn btn-primary">
+          <i class="bi bi-plus-lg me-1"></i>新增課程時間表
+        </button>
+      </div>
     </div>
 
     <div class="container my-3 px-0">
@@ -81,6 +86,26 @@
               {{ formatWeekRange(weekStartDate, weekEndDate) }}
             </span>
           </div>
+
+          <!-- 只顯示自己 開關選項 -->
+          <div class="d-flex align-items-center bg-white px-3 py-2 rounded-3 border shadow-sm">
+            <div class="form-check form-switch m-0 d-flex align-items-center gap-2">
+              <input 
+                class="form-check-input my-0" 
+                type="checkbox" 
+                role="switch" 
+                id="onlyMyScheduleSwitch" 
+                v-model="onlyMySchedule" 
+                style="cursor: pointer;"
+              />
+              <label class="form-check-label fw-bold small text-dark user-select-none mb-0" for="onlyMyScheduleSwitch" style="cursor: pointer;">
+                <i class="bi bi-person-fill text-primary me-1"></i>只顯示自己
+              </label>
+            </div>
+            <span v-if="adminAuth.currentUser?.name" class="badge bg-primary-subtle text-primary border border-primary-subtle ms-2" style="font-size: 0.72rem;">
+              {{ adminAuth.currentUser.name }}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -109,7 +134,12 @@
       <div v-else-if="filteredSchedules.length === 0" class="alert alert-info text-center my-4 py-4 shadow-sm border-0">
         <i class="bi bi-calendar-x fs-2 d-block mb-2 text-primary"></i>
         <h5 class="fw-bold">此時段尚無排程</h5>
-        <p class="text-muted mb-3">此{{ viewMode === 'week' ? '週' : '月份' }}目前沒有安排任何課程時間表。</p>
+        <p class="text-muted mb-3">
+          此{{ viewMode === 'week' ? '週' : '月份' }}目前沒有安排任何課程時間表<span v-if="onlyMySchedule">（已開啟「只顯示自己」）</span>。
+        </p>
+        <button v-if="onlyMySchedule" @click="onlyMySchedule = false" class="btn btn-outline-primary btn-sm me-2">
+          <i class="bi bi-people me-1"></i>查看全部老師排程
+        </button>
         <button @click="addNewSchedule" class="btn btn-primary btn-sm">
           <i class="bi bi-plus-lg me-1"></i>立即新增排程
         </button>
@@ -159,7 +189,7 @@
                 >
                   <p class="schedule-name">{{ schedule.course_name }}</p>
                   <p class="schedule-date">{{ formatScheduleDate(schedule.schedule_date) }}</p>
-                  <p class="schedule-teacher d-flex align-items-center justify-content-center gap-1">
+                  <p class="schedule-teacher d-flex flex-wrap align-items-center justify-content-center gap-1">
                     <img 
                       v-if="schedule.teacher_avatar_url" 
                       :src="schedule.teacher_avatar_url" 
@@ -168,6 +198,14 @@
                       style="width: 20px; height: 20px;" 
                     />
                     <span>{{ schedule.teacher_name }}</span>
+                    <span 
+                      v-if="schedule.is_substitute" 
+                      class="badge bg-warning text-dark border border-warning shadow-sm" 
+                      style="font-size: 0.65rem;"
+                      :title="`代課 (原課程老師: ${schedule.original_teacher_name || '原老師'})${schedule.substitute_notes ? ' - ' + schedule.substitute_notes : ''}`"
+                    >
+                      代課
+                    </span>
                   </p>
                   <p class="schedule-level">{{ schedule.level }}</p>
                   <div class="enrollment-info mb-1">
@@ -185,6 +223,9 @@
                   </div>
                   <div class="schedule-actions">
                     <div class="d-flex flex-wrap gap-1 justify-content-center">
+                      <button @click.stop="goToAttendance(schedule)" class="btn btn-sm btn-success text-white fw-bold px-2" title="前往本堂課打卡">
+                        <i class="bi bi-box-arrow-in-right me-1"></i>打卡
+                      </button>
                       <button @click.stop="editSchedule(schedule.id)" class="btn btn-sm btn-light">編輯</button>
                       <button 
                         @click.stop="toggleEnrollment(schedule.id, schedule.allow_enrollment)" 
@@ -224,7 +265,7 @@
               <div class="schedule-card-mobile-details">
                 <p class="schedule-name fs-5 fw-bold mb-1">{{ schedule.course_name }}</p>
                 <p class="schedule-date mb-1">{{ formatScheduleDate(schedule.schedule_date) }}</p>
-                <p class="schedule-teacher mb-1 d-flex align-items-center gap-1">
+                <p class="schedule-teacher mb-1 d-flex flex-wrap align-items-center gap-1">
                   <img 
                     v-if="schedule.teacher_avatar_url" 
                     :src="schedule.teacher_avatar_url" 
@@ -233,6 +274,13 @@
                     style="width: 24px; height: 24px;" 
                   />
                   <span>授課：{{ schedule.teacher_name }} | {{ schedule.level }}</span>
+                  <span 
+                    v-if="schedule.is_substitute" 
+                    class="badge bg-warning text-dark border border-warning shadow-sm ms-1" 
+                    style="font-size: 0.72rem;"
+                  >
+                    代課 (原: {{ schedule.original_teacher_name || '原老師' }})
+                  </span>
                 </p>
                 <div class="enrollment-info mb-1">
                   <small>報名人數：{{ schedule.enrollment_count || 0 }}/{{ schedule.course_capacity || 15 }}人</small>
@@ -249,6 +297,9 @@
                 </div>
                 <div class="schedule-actions mt-2">
                   <div class="d-flex flex-wrap gap-2">
+                    <button @click.stop="goToAttendance(schedule)" class="btn btn-sm btn-success text-white fw-bold">
+                      <i class="bi bi-box-arrow-in-right me-1"></i>上課打卡
+                    </button>
                     <button @click.stop="editSchedule(schedule.id)" class="btn btn-sm btn-light">編輯</button>
                     <button 
                       @click.stop="toggleEnrollment(schedule.id, schedule.allow_enrollment)" 
@@ -277,7 +328,9 @@
           <div class="modal-body">
             <AddSchedule 
               v-if="showEditModal" 
+              :key="editingScheduleId ? ('edit-' + editingScheduleId) : ('add-' + (selectedDateForAdd || 'new'))"
               :scheduleId="editingScheduleId" 
+              :initialData="editingScheduleData"
               :initialDate="selectedDateForAdd" 
               @schedule-updated="handleScheduleUpdated" 
               @close-modal="closeEditModal" 
@@ -559,7 +612,15 @@
               </div>
             </div>
           </div>
-          <div class="modal-footer">
+          <div class="modal-footer d-flex justify-content-between">
+            <button 
+              type="button" 
+              class="btn btn-success fw-bold" 
+              @click="goToAttendance(selectedSchedule)"
+              v-if="selectedSchedule"
+            >
+              <i class="bi bi-box-arrow-in-right me-1"></i>前往此課程打卡
+            </button>
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
           </div>
         </div>
@@ -582,8 +643,14 @@ export default {
     AddSchedule
   },
   data() {
+    const adminAuth = useAdminAuth();
+    // 老師帳號預設是只顯示自己
+    const isTeacher = adminAuth.currentRole === 'teacher';
+
     return {
-      adminAuth: useAdminAuth(),
+      adminAuth,
+      // 是否只顯示自己的排程
+      onlyMySchedule: isTeacher,
       // 檢視模式：'month' (月顯示) 或 'week' (週顯示)
       viewMode: localStorage.getItem('schedules_view_mode') || 'month',
 
@@ -603,6 +670,7 @@ export default {
       loading: false,
       showEditModal: false,
       editingScheduleId: null,
+      editingScheduleData: null,
       editModal: null,
       selectedDateForAdd: null,
       
@@ -646,7 +714,11 @@ export default {
     filteredSchedules() {
       return this.schedules
         .filter(schedule => {
-          return this.selectedDanceType === '全部' || schedule.style_name === this.selectedDanceType;
+          // 舞蹈風格篩選
+          const matchesType = this.selectedDanceType === '全部' || schedule.style_name === this.selectedDanceType;
+          // 只顯示自己篩選
+          const matchesTeacher = !this.onlyMySchedule || this.isMySchedule(schedule);
+          return matchesType && matchesTeacher;
         })
         .sort((a, b) => {
           const dateCompare = new Date(a.schedule_date) - new Date(b.schedule_date);
@@ -696,6 +768,9 @@ export default {
     }
   },
   created() {
+    if (this.adminAuth.currentRole === 'teacher') {
+      this.onlyMySchedule = true;
+    }
     this.initializeDates();
     this.fetchDanceTypes();
     this.fetchSchedules();
@@ -708,6 +783,7 @@ export default {
       editModalEl.addEventListener('hidden.bs.modal', () => {
         this.showEditModal = false;
         this.editingScheduleId = null;
+        this.editingScheduleData = null;
         this.selectedDateForAdd = null;
       });
     }
@@ -953,13 +1029,7 @@ export default {
       return `${date.getMonth() + 1}/${date.getDate()}`;
     },
     getSchedulesForDay(day) {
-      return this.schedules
-        .filter(schedule => {
-          const matchesDay = this.getDayText(schedule.day_of_week) === day;
-          const matchesType = this.selectedDanceType === '全部' || schedule.style_name === this.selectedDanceType;
-          return matchesDay && matchesType;
-        })
-        .sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''));
+      return this.filteredSchedules.filter(schedule => this.getDayText(schedule.day_of_week) === day);
     },
     getLessonClass(type) {
       const classMap = {
@@ -1020,14 +1090,26 @@ export default {
       }
     },
 
+    goToAttendance(schedule) {
+      if (!schedule) return;
+      this.enrollmentModal?.hide();
+      const schedId = schedule.id || schedule.schedule_id;
+      this.$router.push({
+        path: '/admin/teacher-attendance',
+        query: schedId ? { schedule_id: schedId } : {}
+      });
+    },
     addNewSchedule() {
       this.editingScheduleId = null;
+      this.editingScheduleData = null;
       this.selectedDateForAdd = this.viewMode === 'week' ? this.formatDateForAPI(new Date()) : null;
       this.showEditModal = true;
       this.$nextTick(() => this.editModal?.show());
     },
     editSchedule(id) {
-      this.editingScheduleId = id;
+      const schedule = this.schedules.find(s => Number(s.id) === Number(id));
+      this.editingScheduleId = Number(id);
+      this.editingScheduleData = schedule ? { ...schedule } : null;
       this.selectedDateForAdd = null;
       this.showEditModal = true;
       this.$nextTick(() => this.editModal?.show());
@@ -1065,9 +1147,15 @@ export default {
     handleScheduleUpdated() {
       this.fetchSchedules();
       this.editModal?.hide();
+      this.showEditModal = false;
+      this.editingScheduleId = null;
+      this.editingScheduleData = null;
     },
     closeEditModal() {
       this.editModal?.hide();
+      this.showEditModal = false;
+      this.editingScheduleId = null;
+      this.editingScheduleData = null;
     },
     async viewEnrollments(schedule) {
       if (!schedule || !schedule.id) {
@@ -1324,6 +1412,43 @@ export default {
       const count = schedule.enrollment_count || 0;
       return this.calculateSalary(schedule, count);
     },
+    isMySchedule(schedule) {
+      if (!schedule) return false;
+      const user = this.adminAuth.currentUser;
+      if (!user) return false;
+
+      const myTeacherId = user.teacher_id;
+      const scheduleTeacherId = schedule.teacher_id;
+      const originalTeacherId = schedule.original_teacher_id;
+
+      // 1. 若皆有設定 teacher_id，優先比對目前授課老師 ID 或原老師 ID
+      if (myTeacherId) {
+        if (scheduleTeacherId && Number(myTeacherId) === Number(scheduleTeacherId)) {
+          return true;
+        }
+        if (originalTeacherId && Number(myTeacherId) === Number(originalTeacherId)) {
+          return true;
+        }
+      }
+
+      // 2. 比對老師名稱（考量完全相符或包含關係，例如「張美麗」與「張美麗老師」）
+      const myName = (user.name || '').trim();
+      const myTeacherName = (user.teacher_name || '').trim();
+      const scheduleTeacherName = (schedule.teacher_name || '').trim();
+      const originalTeacherName = (schedule.original_teacher_name || '').trim();
+
+      const namesToCheck = [scheduleTeacherName, originalTeacherName].filter(Boolean);
+      for (const name of namesToCheck) {
+        if (myName && (name === myName || name.includes(myName) || myName.includes(name))) {
+          return true;
+        }
+        if (myTeacherName && (name === myTeacherName || name.includes(myTeacherName) || myTeacherName.includes(name))) {
+          return true;
+        }
+      }
+
+      return false;
+    },
     canViewScheduleSalary(schedule) {
       if (!schedule) return false;
       // 系統管理員 (admin) 擁有全部查看權限
@@ -1332,32 +1457,7 @@ export default {
       }
       // 授課老師 (teacher) 只能查看自己的授課鐘點費，不得看到其他老師的授課鐘點費
       if (this.adminAuth.currentRole === 'teacher') {
-        const user = this.adminAuth.currentUser;
-        if (!user) return false;
-
-        const myTeacherId = user.teacher_id;
-        const scheduleTeacherId = schedule.teacher_id;
-
-        // 1. 若皆有設定 teacher_id，優先比對 ID
-        if (myTeacherId && scheduleTeacherId && Number(myTeacherId) === Number(scheduleTeacherId)) {
-          return true;
-        }
-
-        // 2. 比對老師名稱（考量張美麗 vs 張美麗老師等包含關係）
-        const myName = (user.name || '').trim();
-        const myTeacherName = (user.teacher_name || '').trim();
-        const scheduleTeacherName = (schedule.teacher_name || '').trim();
-
-        if (scheduleTeacherName) {
-          if (myName && (scheduleTeacherName === myName || scheduleTeacherName.includes(myName) || myName.includes(scheduleTeacherName))) {
-            return true;
-          }
-          if (myTeacherName && (scheduleTeacherName === myTeacherName || scheduleTeacherName.includes(myTeacherName) || myTeacherName.includes(scheduleTeacherName))) {
-            return true;
-          }
-        }
-
-        return false;
+        return this.isMySchedule(schedule);
       }
       // 櫃檯客服與其他身分不可查看
       return false;

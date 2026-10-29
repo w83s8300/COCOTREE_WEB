@@ -57,6 +57,7 @@
             <th scope="col">電話</th>
             <th scope="col">電子郵件</th>
             <th scope="col">專長舞風</th>
+            <th scope="col" class="text-center" style="width: 110px;">本月主打星</th>
             <th scope="col" class="text-center" style="width: 140px;">操作</th>
           </tr>
         </thead>
@@ -128,6 +129,22 @@
                 </span>
               </div>
               <span v-else class="text-muted small">無專長舞風</span>
+            </td>
+            <td class="text-center">
+              <button
+                v-if="isAdmin"
+                type="button"
+                class="btn btn-sm rounded-pill px-2 py-1 fw-bold shadow-sm"
+                :class="teacher.is_featured ? 'btn-warning text-dark border-warning' : 'btn-outline-secondary'"
+                @click="toggleFeatured(teacher)"
+                :title="teacher.is_featured ? '點擊取消主打星' : '點擊設為本月主打星'"
+              >
+                <i :class="teacher.is_featured ? 'bi bi-star-fill text-dark' : 'bi bi-star'"></i>
+                <span class="ms-1 small">{{ teacher.is_featured ? '主打星' : '設為' }}</span>
+              </button>
+              <span v-else class="badge" :class="teacher.is_featured ? 'bg-warning text-dark' : 'bg-light text-muted border'">
+                {{ teacher.is_featured ? '⭐ 主打星' : '-' }}
+              </span>
             </td>
             <td class="text-center">
               <button @click="openEdit(teacher.id)" class="btn btn-primary btn-sm me-1">編輯</button>
@@ -446,6 +463,15 @@ export default {
         this.error = '獲取老師列表失敗，請稍後再試。';
       } finally {
         this.loading = false;
+      }
+    },
+    async toggleFeatured(teacher) {
+      try {
+        const res = await api.post(`/teachers/${teacher.id}/toggle-featured`);
+        teacher.is_featured = res.is_featured ? 1 : 0;
+        showToast(res.message || '更新主打星狀態成功！', 'success');
+      } catch (err) {
+        showToast('更新主打星失敗', 'error');
       }
     },
     openAccountModal(teacher) {

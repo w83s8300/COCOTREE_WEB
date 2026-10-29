@@ -12,82 +12,87 @@
       <div class="container-fluid">
         <router-link class="navbar-brand" to="/">Dance Studio</router-link>
 
-        <!-- 學員登入 / 狀態選單 (置於右上角，無論手機或電腦皆直接顯示) -->
-        <div class="d-flex align-items-center order-lg-last ms-auto ms-lg-3 me-2 me-lg-0">
-          <!-- 未登入狀態 -->
-          <div v-if="!isLoggedIn" class="d-flex align-items-center gap-2">
-            <button
-              class="btn btn-outline-light btn-sm d-flex align-items-center px-3"
-              @click="openLoginModal"
-            >
-              <i class="bi bi-person-fill me-1"></i>學員登入
-            </button>
-            <button
-              class="btn btn-warning btn-sm d-flex align-items-center px-3 fw-bold text-dark shadow-sm"
-              @click="openRegisterModal"
-            >
-              <i class="bi bi-person-plus-fill me-1"></i>會員註冊
-            </button>
+        <!-- 管理後台模式：僅顯示返回前台按鈕，不顯示前台漢堡選單與學員登入，避免手機版出現兩個選單按鈕 -->
+        <div v-if="isAdminRoute" class="d-flex align-items-center ms-auto">
+          <router-link to="/" class="btn btn-outline-light btn-sm rounded-pill px-3 py-1">
+            <i class="bi bi-arrow-left me-1"></i>回官網首頁
+          </router-link>
+        </div>
+
+        <!-- 一般前台模式：顯示學員登入/會員註冊 與 導航欄 -->
+        <template v-else>
+          <!-- 學員登入 / 狀態選單 (置於右上角，無論手機或電腦皆直接顯示) -->
+          <div class="d-flex align-items-center order-lg-last ms-auto ms-lg-3 me-2 me-lg-0">
+            <!-- 未登入狀態（合併為單一按鈕） -->
+            <div v-if="!isLoggedIn" class="d-flex align-items-center">
+              <button
+                class="btn btn-outline-light btn-sm d-flex align-items-center px-3 rounded-pill shadow-sm"
+                @click="openLoginModal"
+              >
+                <i class="bi bi-person-circle me-1"></i>
+                <span><span class="d-none d-sm-inline">學員</span>登入 / 註冊</span>
+              </button>
+            </div>
+
+            <!-- 已登入狀態 -->
+            <div v-else class="dropdown position-relative" ref="userDropdownWrapper">
+              <button
+                class="btn btn-primary btn-sm dropdown-toggle d-flex align-items-center px-3 shadow-sm"
+                type="button"
+                @click.stop="toggleUserDropdown"
+              >
+                <i class="bi bi-person-circle me-1"></i>
+                <span class="fw-bold">{{ currentStudent?.name }}</span>
+                <span class="badge bg-light text-primary ms-2 fw-bold">{{ currentStudent?.remaining_classes ?? 0 }} 堂</span>
+              </button>
+              <ul
+                class="dropdown-menu dropdown-menu-end shadow"
+                :class="{ show: userDropdownOpen }"
+                style="position: absolute; right: 0; left: auto; min-width: 220px;"
+              >
+                <li class="px-3 py-2 border-bottom bg-light">
+                  <div class="small text-muted">目前登入學員</div>
+                  <div class="fw-bold text-dark fs-6">{{ currentStudent?.name }}</div>
+                  <div class="small text-primary fw-bold">剩餘：{{ currentStudent?.remaining_classes ?? 0 }} 堂課</div>
+                </li>
+                <li>
+                  <a class="dropdown-item py-2" href="javascript:void(0)" @click="openProfileModal">
+                    <i class="bi bi-person-vcard me-2 text-primary"></i>會員中心 / 預約紀錄
+                  </a>
+                </li>
+                <li><hr class="dropdown-divider my-1"></li>
+                <li>
+                  <a class="dropdown-item py-2 text-danger" href="javascript:void(0)" @click="handleLogout">
+                    <i class="bi bi-box-arrow-right me-2"></i>登出帳號
+                  </a>
+                </li>
+              </ul>
+            </div>
           </div>
 
-          <!-- 已登入狀態 -->
-          <div v-else class="dropdown position-relative" ref="userDropdownWrapper">
-            <button
-              class="btn btn-primary btn-sm dropdown-toggle d-flex align-items-center px-3 shadow-sm"
-              type="button"
-              @click.stop="toggleUserDropdown"
-            >
-              <i class="bi bi-person-circle me-1"></i>
-              <span class="fw-bold">{{ currentStudent?.name }}</span>
-              <span class="badge bg-light text-primary ms-2 fw-bold">{{ currentStudent?.remaining_classes ?? 0 }} 堂</span>
-            </button>
-            <ul
-              class="dropdown-menu dropdown-menu-end shadow"
-              :class="{ show: userDropdownOpen }"
-              style="position: absolute; right: 0; left: auto; min-width: 220px;"
-            >
-              <li class="px-3 py-2 border-bottom bg-light">
-                <div class="small text-muted">目前登入學員</div>
-                <div class="fw-bold text-dark fs-6">{{ currentStudent?.name }}</div>
-                <div class="small text-primary fw-bold">剩餘：{{ currentStudent?.remaining_classes ?? 0 }} 堂課</div>
-              </li>
-              <li>
-                <a class="dropdown-item py-2" href="javascript:void(0)" @click="openProfileModal">
-                  <i class="bi bi-person-vcard me-2 text-primary"></i>會員中心 / 預約紀錄
-                </a>
-              </li>
-              <li><hr class="dropdown-divider my-1"></li>
-              <li>
-                <a class="dropdown-item py-2 text-danger" href="javascript:void(0)" @click="handleLogout">
-                  <i class="bi bi-box-arrow-right me-2"></i>登出帳號
-                </a>
+          <button
+            ref="navbarToggler"
+            class="navbar-toggler"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#navbarNav"
+            aria-controls="navbarNav"
+            aria-expanded="false"
+            aria-label="切換導航"
+          >
+            <span class="navbar-toggler-icon"></span>
+          </button>
+
+          <div ref="navbarNav" class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav me-auto">
+              <li v-for="link in navLinks" :key="link.to" class="nav-item">
+                <router-link class="nav-link" :to="link.to" @click="closeNavbar">
+                  {{ link.label }}
+                </router-link>
               </li>
             </ul>
           </div>
-        </div>
-
-        <button
-          ref="navbarToggler"
-          class="navbar-toggler"
-          type="button"
-          data-bs-toggle="collapse"
-          data-bs-target="#navbarNav"
-          aria-controls="navbarNav"
-          aria-expanded="false"
-          aria-label="切換導航"
-        >
-          <span class="navbar-toggler-icon"></span>
-        </button>
-
-        <div ref="navbarNav" class="collapse navbar-collapse" id="navbarNav">
-          <ul class="navbar-nav me-auto">
-            <li v-for="link in navLinks" :key="link.to" class="nav-item">
-              <router-link class="nav-link" :to="link.to" @click="closeNavbar">
-                {{ link.label }}
-              </router-link>
-            </li>
-          </ul>
-        </div>
+        </template>
       </div>
     </nav>
 
@@ -107,8 +112,13 @@
             </div>
           </div>
           <div class="col-md-6 text-center text-md-end">
-            <p class="mb-0">地址：402台中市南區工學路169號2樓</p>
-            <p class="mb-0">電話：(02) 1234-5678</p>
+            <p class="mb-1">地址：402台中市南區工學路169號2樓</p>
+            <p class="mb-2">電話：(02) 1234-5678</p>
+            <div class="small">
+              <router-link to="/admin" class="text-white-50 text-decoration-none">
+                <i class="bi bi-shield-lock me-1"></i>管理後台登入
+              </router-link>
+            </div>
           </div>
         </div>
       </div>
@@ -151,7 +161,7 @@ export default {
         { to: '/instructors', label: '師資介紹' },
         { to: '/schedule', label: '報名課程' },
         { to: '/pricing', label: '費用' },
-        { to: '/gallery', label: '畫廊' },
+        { to: '/gallery', label: '活動花絮' },
         { to: '/venue', label: '場地' },
         { to: '/faq', label: '常見問題' },
         { to: '/contact', label: '聯絡我們' },
@@ -162,6 +172,9 @@ export default {
   computed: {
     currentYear() {
       return new Date().getFullYear()
+    },
+    isAdminRoute() {
+      return this.$route.path.startsWith('/admin')
     },
     isLoggedIn() {
       return !!this.auth.state.student && !!this.auth.state.student.id
@@ -262,9 +275,9 @@ export default {
   opacity: 0;
 }
 
-/* Content layout - prevents content from hiding behind fixed navbar */
+/* Content layout - seamlessly attaches to fixed navbar without white gap */
 .content-wrapper {
-  padding-top: 70px;
+  padding-top: 56px;
   min-height: calc(100vh - 220px);
 }
 

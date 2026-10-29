@@ -23,10 +23,19 @@ CREATE TABLE students (
     emergency_phone VARCHAR(20),
     medical_notes TEXT,
     remaining_classes INT DEFAULT 0 COMMENT '剩餘堂數',
-    membership_expiry DATE COMMENT '會員到期日',
+    membership_expiry DATE COMMENT '會員年費到期日',
+    expiry_date DATE NULL COMMENT '會員年費到期日 (相容欄位)',
+    monthly_pass_expiry DATE COMMENT '月費到期日',
+    bank_last_5 VARCHAR(10) NULL COMMENT '約定轉帳銀行後5碼',
+    line_user_id VARCHAR(100) UNIQUE NULL COMMENT 'LINE User ID',
+    line_display_name VARCHAR(100) NULL COMMENT 'LINE 暱稱',
+    line_picture_url VARCHAR(255) NULL COMMENT 'LINE 大頭貼圖片URL',
+    line_linked_at DATETIME NULL COMMENT 'LINE 帳號關聯時間',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
 
 -- 建立教室表格
 CREATE TABLE rooms (
@@ -40,6 +49,8 @@ CREATE TABLE rooms (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
 
 -- 建立老師表格
 CREATE TABLE teachers (
@@ -56,12 +67,16 @@ CREATE TABLE teachers (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+
+
 -- 建立風格表格
 CREATE TABLE styles (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(50) NOT NULL UNIQUE,
     description TEXT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
 
 -- 建立老師-風格關聯表
 CREATE TABLE teacher_styles (
@@ -71,6 +86,8 @@ CREATE TABLE teacher_styles (
     FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE CASCADE,
     FOREIGN KEY (style_id) REFERENCES styles(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
 
 -- 建立課程表格
 CREATE TABLE courses (
@@ -82,6 +99,7 @@ CREATE TABLE courses (
     duration_minutes INT DEFAULT 60,
     max_students INT DEFAULT 15,
     price DECIMAL(10,2),
+    allow_monthly_pass BOOLEAN DEFAULT TRUE COMMENT '是否支援月費暢跳',
     teacher_id INT,
     base_salary DECIMAL(10,2) DEFAULT 0.00,
     low_student_threshold INT DEFAULT 0,
@@ -94,6 +112,8 @@ CREATE TABLE courses (
     FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE SET NULL,
     FOREIGN KEY (style_id) REFERENCES styles(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
 
 -- 建立課程時間表格
 CREATE TABLE course_schedules (
@@ -110,6 +130,8 @@ CREATE TABLE course_schedules (
     FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
     FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
 
 -- 修改現有的報名表格，添加外鍵關聯
 CREATE TABLE enrollments (
@@ -131,6 +153,8 @@ CREATE TABLE enrollments (
     FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE SET NULL,
     FOREIGN KEY (schedule_id) REFERENCES course_schedules(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
 
 -- 插入範例教室資料
 INSERT INTO rooms (name, capacity, equipment, description, hourly_rate, is_available) VALUES
@@ -206,6 +230,8 @@ CREATE TABLE IF NOT EXISTS admin_users (
     FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+
+
 -- 插入預設管理員、櫃檯、老師帳號
 INSERT IGNORE INTO admin_users (id, username, password, name, role, phone, teacher_id) VALUES
 (1, 'admin', 'admin123', '系統管理員', 'admin', '0911000111', NULL),
@@ -231,6 +257,8 @@ CREATE TABLE IF NOT EXISTS staff_attendance (
     FOREIGN KEY (user_id) REFERENCES admin_users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+
+
 -- 建立授課老師上課下課打卡記錄表
 CREATE TABLE IF NOT EXISTS teacher_attendance (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -254,6 +282,8 @@ CREATE TABLE IF NOT EXISTS teacher_attendance (
     FOREIGN KEY (schedule_id) REFERENCES course_schedules(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+
+
 -- 建立系統通用設定表 (打卡 IP 白名單等)
 CREATE TABLE IF NOT EXISTS system_settings (
     setting_key VARCHAR(100) PRIMARY KEY,
@@ -262,6 +292,147 @@ CREATE TABLE IF NOT EXISTS system_settings (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+
+
 INSERT IGNORE INTO system_settings (setting_key, setting_value, description) VALUES
 ('attendance_ip_restriction_enabled', '0', '是否啟用打卡 IP 白名單限制 (0=關閉, 1=開啟)'),
-('attendance_allowed_ips', '', '允許打卡的 IP 地址清單 (以逗號或換行分隔)');
+('attendance_allowed_ips', '', '允許打卡的 IP 地址清單 (以逗號或換行分隔)'),
+('line_login_enabled', '1', '是否啟用 LINE 快速登入與帳號關聯 (0=關閉, 1=開啟)'),
+('line_channel_id', '', 'LINE Login Channel ID (頻道識別碼)'),
+('line_channel_secret', '', 'LINE Login Channel Secret (頻道金鑰)'),
+('line_official_id', '', '工作室 LINE 官方帳號 ID (例如 @dancestudio)'),
+('line_official_url', '', '工作室 LINE 官方加好友連結 (例如 https://line.me/R/ti/p/@dancestudio)');
+
+
+-- 建立課程價目表表格
+CREATE TABLE IF NOT EXISTS pricing_plans (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(100) NOT NULL,
+    subtitle VARCHAR(100) NULL,
+    price VARCHAR(50) NOT NULL,
+    unit VARCHAR(100) NOT NULL,
+    plan_type VARCHAR(20) NOT NULL DEFAULT 'classes' COMMENT '方案類型: classes (買幾堂) 或 monthly_pass (月票/效期制)',
+    classes_count INT DEFAULT 1,
+    validity_days INT NOT NULL DEFAULT 0 COMMENT '月票有效天數 (如 30 代表 1 個月)',
+    original_price VARCHAR(50) NULL,
+    is_popular BOOLEAN DEFAULT FALSE,
+    requires_membership BOOLEAN DEFAULT FALSE COMMENT '是否限有效會員年費學員購買',
+    features TEXT NOT NULL,
+    button_text VARCHAR(50) DEFAULT '買課',
+    button_link VARCHAR(255) DEFAULT '/contact',
+    sort_order INT DEFAULT 0,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+
+INSERT IGNORE INTO system_settings (setting_key, setting_value, description) VALUES
+('pricing_notice_title', '學員報名與上課須知', '課程價目表須知標題'),
+('pricing_notice_content', '所有常規課程皆需提前於線上系統或向官方 LINE 預約登記。\n堂數方案為個人專屬權益，限本人上課使用，不得轉讓或轉售他人。\n方案自購買啟用起計，請於各方案指定之有效期限內使用完畢。\n若需取消或請假，請最晚於課程開始前 2 小時完成線上取消，以免扣除堂數。\n如遇天然災害或政府宣佈停班停課，本工作室常規課程將自動順延。', '課程價目表學員須知內容(每行一項)');
+
+INSERT INTO pricing_plans (id, title, subtitle, price, unit, original_price, is_popular, features, button_text, button_link, sort_order, is_active)
+SELECT 1, '單堂體驗', '適合初次體驗的學員', '$500', '/ 堂', NULL, 0, '["適合初次體驗的學員", "可任選一堂常規舞蹈課", "專業教練動作引導", "課後舞風諮詢"]', '買課', '/contact', 1, 1
+WHERE NOT EXISTS (SELECT 1 FROM pricing_plans WHERE id = 1);
+
+INSERT INTO pricing_plans (id, title, subtitle, price, unit, original_price, is_popular, features, button_text, button_link, sort_order, is_active)
+SELECT 2, '小資方案', '適合規律每週練習者', '$3,200', '/ 8 堂 (平均 $400/堂)', NULL, 0, '["適合規律每週練習者", "使用期限 2 個月", "全時段常規課程皆適用", "請假彈性保留堂數"]', '買課', '/contact', 2, 1
+WHERE NOT EXISTS (SELECT 1 FROM pricing_plans WHERE id = 2);
+
+INSERT INTO pricing_plans (id, title, subtitle, price, unit, original_price, is_popular, features, button_text, button_link, sort_order, is_active)
+SELECT 3, '熱血方案', '適合重度舞蹈愛好者', '$6,000', '/ 20 堂 (平均 $300/堂)', NULL, 1, '["適合重度舞蹈愛好者", "使用期限 4 個月", "全常規課程自由選修", "贈送專屬品牌運動毛巾", "享成果發表報名優先權"]', '買課', '/contact', 3, 1
+WHERE NOT EXISTS (SELECT 1 FROM pricing_plans WHERE id = 3);
+
+INSERT INTO pricing_plans (id, title, subtitle, price, unit, original_price, is_popular, features, button_text, button_link, sort_order, is_active)
+SELECT 4, '尊榮月費', '當月份不限堂數暢快跳', '$8,000', '/ 月 (無限堂數)', NULL, 0, '["當月份不限堂數暢快跳", "全常規課程皆可預約", "場地個人租借 8 折特惠", "周邊服飾商品 9 折優惠"]', '買課', '/contact', 4, 1
+WHERE NOT EXISTS (SELECT 1 FROM pricing_plans WHERE id = 4);
+
+INSERT INTO pricing_plans (id, title, subtitle, price, unit, plan_type, classes_count, validity_days, original_price, is_popular, features, button_text, button_link, sort_order, is_active)
+SELECT 5, '會員年費', '年度專屬會員資格與優惠', '$1,200', '/ 年 (365天)', 'membership_fee', 0, 365, NULL, 0, '["成為正式年度會員", "專屬會員身份有效期限 1 年 (365天)", "享有購課與報名優惠資格", "專屬會員專屬禮與活動優先權"]', '買課', '/contact', 5, 1
+WHERE NOT EXISTS (SELECT 1 FROM pricing_plans WHERE id = 5);
+
+
+-- 建立購課訂單表格
+CREATE TABLE IF NOT EXISTS pricing_orders (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    order_no VARCHAR(50) UNIQUE NOT NULL,
+    student_id INT NOT NULL,
+    student_name VARCHAR(100) NOT NULL,
+    student_phone VARCHAR(20) NOT NULL,
+    plan_id INT NULL,
+    plan_title VARCHAR(100) NOT NULL,
+    price VARCHAR(50) NOT NULL,
+    plan_type VARCHAR(20) NOT NULL DEFAULT 'classes',
+    requires_membership BOOLEAN DEFAULT FALSE,
+    classes_count INT DEFAULT 1,
+    validity_days INT NOT NULL DEFAULT 0,
+    bank_last_5 VARCHAR(10) NOT NULL,
+    status ENUM('pending', 'confirmed', 'rejected', 'cancelled') DEFAULT 'pending',
+    notes TEXT NULL,
+    admin_notes TEXT NULL,
+    confirmed_by INT NULL,
+    confirmed_at DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+    FOREIGN KEY (plan_id) REFERENCES pricing_plans(id) ON DELETE SET NULL,
+    FOREIGN KEY (confirmed_by) REFERENCES admin_users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+
+-- 建立首頁橫幅表格
+CREATE TABLE IF NOT EXISTS banners (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    subtitle TEXT NULL,
+    badge_text VARCHAR(100) NULL,
+    badge_color VARCHAR(50) DEFAULT 'warning',
+    image_url TEXT NOT NULL,
+    primary_button_text VARCHAR(100) NULL,
+    primary_button_link VARCHAR(255) NULL,
+    primary_button_style VARCHAR(100) DEFAULT 'primary',
+    secondary_button_text VARCHAR(100) NULL,
+    secondary_button_link VARCHAR(255) NULL,
+    secondary_button_style VARCHAR(100) DEFAULT 'outline-light',
+    interval_ms INT DEFAULT 5000,
+    sort_order INT DEFAULT 0,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO banners (id, title, subtitle, badge_text, badge_color, image_url, primary_button_text, primary_button_link, primary_button_style, secondary_button_text, secondary_button_link, secondary_button_style, interval_ms, sort_order, is_active)
+SELECT 1, '釋放你的節奏，舞出你的熱情', '無論是零基礎新手或資深舞者，在 Dance Studio 都能找到最適合你的專屬舞台。', '✨ 啟動你的舞蹈新生活', 'warning', 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?auto=format&fit=crop&w=1920&q=80', '立即預約課程', '/schedule', 'primary', '認識師資團隊', '/instructors', 'outline-light', 5000, 1, 1
+WHERE NOT EXISTS (SELECT 1 FROM banners WHERE id = 1);
+
+INSERT INTO banners (id, title, subtitle, badge_text, badge_color, image_url, primary_button_text, primary_button_link, primary_button_style, secondary_button_text, secondary_button_link, secondary_button_style, interval_ms, sort_order, is_active)
+SELECT 2, '多元舞風體系 × 專業細膩教學', '流行街舞、K-POP MV、抒情爵士、芭蕾律動，循序漸進拆解每個核心動作。', '👑 頂尖專業名師陣容', 'primary', 'https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&w=1920&q=80', '查看本週課表', '/schedule', 'warning', '課程收費方案', '/pricing', 'outline-light', 5000, 2, 1
+WHERE NOT EXISTS (SELECT 1 FROM banners WHERE id = 2);
+
+INSERT INTO banners (id, title, subtitle, badge_text, badge_color, image_url, primary_button_text, primary_button_link, primary_button_style, secondary_button_text, secondary_button_link, secondary_button_style, interval_ms, sort_order, is_active)
+SELECT 3, '高規格減震地板與專業環繞音響', '四大獨立主題練習室，明亮寬敞的空間與貼心休息區，享受最極致的跳舞體驗。', '🏢 專業國際級練習空間', 'success', 'https://images.unsplash.com/photo-1518609878373-06d740f60d8b?auto=format&fit=crop&w=1920&q=80', '參觀場地環境', '/venue', 'light', '關於我們', '/about', 'outline-light', 5000, 3, 1
+WHERE NOT EXISTS (SELECT 1 FROM banners WHERE id = 3);
+
+-- 建立各分頁頂部橫幅表格
+CREATE TABLE IF NOT EXISTS page_banners (
+    page_key VARCHAR(50) PRIMARY KEY,
+    page_name VARCHAR(100) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    subtitle VARCHAR(255) NULL,
+    image_url TEXT NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO page_banners (page_key, page_name, title, subtitle, image_url) VALUES
+('about', '關於我們', '關於我們 / ABOUT US', '致力於為所有舞蹈愛好者提供最專業、多元的學習體驗', 'https://picsum.photos/1920/500?random=9'),
+('history', '品牌沿革', '品牌沿革 / HISTORY', '見證 Dance Studio 歷年來的里程碑與熱血歷程', 'https://picsum.photos/1920/500?random=8'),
+('instructors', '師資團隊', '師資團隊 / INSTRUCTORS', '匯聚業界頂尖名師，細膩指導每一步身體律動', 'https://picsum.photos/1920/500?random=14'),
+('schedule', '課程時間表', '課程時間表 / SCHEDULE', '彈性多元的時段規劃，全方位探索熱門舞風', 'https://picsum.photos/1920/500?random=36'),
+('pricing', '課程價目表', '課程價目表 / PRICING', '透明彈性的收費方案，滿足不同學習階段需求', 'https://picsum.photos/1920/500?random=35'),
+('gallery', '活動花絮', '活動花絮 / GALLERY', '回顧學員舞台演出與歡樂練習日常的精彩瞬間', 'https://picsum.photos/1920/500?random=22'),
+('venue', '場地租借', '場地租借 / VENUE', '專業避震地板、頂級音響設備，打造最佳跳舞空間', 'https://picsum.photos/1920/500?random=29'),
+('faq', '常見問題', '常見問題 / FAQ', '快速解答學員常見疑問，新手安心踏出第一步', 'https://picsum.photos/1920/500?random=33'),
+('contact', '聯絡我們', '聯絡我們 / CONTACT', '歡迎預約參觀、諮詢課程或與我們聯繫交流', 'https://picsum.photos/1920/500?random=34')
+ON DUPLICATE KEY UPDATE page_name=VALUES(page_name);

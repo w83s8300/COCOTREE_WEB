@@ -57,6 +57,12 @@ const routes = [
     meta: { title: '課程價目表 - Dance Studio' }
   },
   {
+    path: '/line-callback',
+    name: 'LineCallback',
+    component: () => import('../views/public/LineCallback.vue'),
+    meta: { title: 'LINE 登入驗證 - Dance Studio' }
+  },
+  {
     path: '/schedule',
     name: 'Schedule',
     component: () => import('../views/student/Schedule.vue'),
@@ -134,6 +140,36 @@ const routes = [
         name: 'Users',
         component: () => import('../views/management/Users.vue'),
         meta: { title: '權限帳號管理 - Dance Studio' }
+      },
+      {
+        path: 'news',
+        name: 'News',
+        component: () => import('../views/management/News.vue'),
+        meta: { title: '最新消息管理 - Dance Studio' }
+      },
+      {
+        path: 'banners',
+        name: 'BannerManagement',
+        component: () => import('../views/management/BannerManagement.vue'),
+        meta: { title: '首頁橫幅管理 - Dance Studio' }
+      },
+      {
+        path: 'pricing',
+        name: 'PricingManagement',
+        component: () => import('../views/management/PricingManagement.vue'),
+        meta: { title: '課程價目表管理 - Dance Studio' }
+      },
+      {
+        path: 'line-settings',
+        name: 'LineSettings',
+        component: () => import('../views/management/LineSettings.vue'),
+        meta: { title: 'LINE 整合設定 - Dance Studio' }
+      },
+      {
+        path: 'gallery',
+        name: 'GalleryManagement',
+        component: () => import('../views/management/GalleryManagement.vue'),
+        meta: { title: '活動花絮管理 - Dance Studio' }
       }
     ]
   },
