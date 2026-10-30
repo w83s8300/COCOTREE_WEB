@@ -551,90 +551,7 @@
                 <div class="form-text small mt-1">※ 此處模擬在前台導航列深色背景下的實際顯示模樣。</div>
               </div>
 
-              <!-- 5. 網站進場開場動畫圖 (Splash Screen) 設定 -->
-              <div class="mb-4 pt-3 border-top">
-                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-                  <label class="form-label fw-bold text-dark mb-0">
-                    <i class="bi bi-display text-primary me-1"></i>網頁開場動畫圖 (Splash Screen)
-                  </label>
-                  <button
-                    v-if="logoForm.logo_type === 'image' && logoForm.logo_image"
-                    type="button"
-                    class="btn btn-outline-secondary btn-sm rounded-pill py-0 px-2 small"
-                    @click="logoForm.splash_image = logoForm.logo_image"
-                  >
-                    <i class="bi bi-arrow-down-up me-1"></i>帶入上方導航列 LOGO 圖片
-                  </button>
-                </div>
-                <p class="text-muted small mb-3">
-                  當訪客剛開啟或進入網站時，在黑色背景中呈現的開場圖示，載入完成後會淡出進入首頁。若未設定則自動使用導航列圖片或預設圖示。
-                </p>
-
-                <div class="card p-3 border bg-light mb-3">
-                  <div class="d-flex flex-wrap gap-2 mb-3">
-                    <button
-                      type="button"
-                      class="btn btn-outline-primary btn-sm d-flex align-items-center gap-1 shadow-sm"
-                      @click="triggerSplashUpload"
-                      :disabled="isUploadingSplash"
-                    >
-                      <span v-if="isUploadingSplash" class="spinner-border spinner-border-sm"></span>
-                      <i v-else class="bi bi-upload"></i>
-                      <span>{{ isUploadingSplash ? '上傳中...' : '從本機電腦上傳開場圖' }}</span>
-                    </button>
-                    <input
-                      type="file"
-                      ref="splashFileInput"
-                      class="d-none"
-                      accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif"
-                      @change="handleSplashFileSelect"
-                    />
-                  </div>
-
-                  <div class="input-group">
-                    <span class="input-group-text bg-white">圖片網址</span>
-                    <input
-                      type="text"
-                      v-model="logoForm.splash_image"
-                      class="form-control"
-                      placeholder="https://... 或點擊上方按鈕上傳開場圖 (支援 GIF/PNG/WebP/JPG)"
-                    />
-                    <button
-                      v-if="logoForm.splash_image"
-                      class="btn btn-outline-danger"
-                      type="button"
-                      @click="logoForm.splash_image = ''"
-                    >
-                      清除
-                    </button>
-                  </div>
-                  <div class="form-text mt-2 small">
-                    建議使用高對比度、深色背景可視之 <strong>PNG (透明背景)</strong>、<strong>GIF (動態圖)</strong> 或 <strong>WebP</strong> 格式。
-                  </div>
-                </div>
-
-                <!-- 開場動畫黑底模擬預覽 -->
-                <div>
-                  <label class="form-label small fw-bold text-muted mb-2">
-                    <i class="bi bi-play-circle text-primary me-1"></i>開場動畫全螢幕黑底預覽 (縮小比例模擬)
-                  </label>
-                  <div
-                    class="rounded-3 d-flex flex-column align-items-center justify-content-center p-4 border shadow-sm position-relative overflow-hidden"
-                    style="background-color: #000; min-height: 160px;"
-                  >
-                    <img
-                      :src="logoForm.splash_image || (logoForm.logo_type === 'image' && logoForm.logo_image ? logoForm.logo_image : '/favicon.ico')"
-                      alt="Splash Preview"
-                      style="max-width: 120px; max-height: 120px; object-fit: contain; animation: pulse 1.5s infinite alternate;"
-                    />
-                    <span class="badge bg-dark border border-secondary text-white-50 mt-3 small">
-                      {{ logoForm.splash_image ? '使用自訂開場圖' : (logoForm.logo_image ? '使用導航列圖片' : '使用系統預設圖示') }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 6. 儲存按鈕 -->
+              <!-- 5. 儲存按鈕 -->
               <div class="d-flex justify-content-end gap-2 pt-3 border-top">
                 <button
                   type="button"
@@ -1251,11 +1168,9 @@ export default {
       logoForm: {
         logo_type: 'text',
         logo_text: 'Dance Studio',
-        logo_image: '',
-        splash_image: ''
+        logo_image: ''
       },
       isUploadingLogo: false,
-      isUploadingSplash: false,
       isSavingLogo: false,
       banners: [],
       pageBanners: [],
@@ -1344,8 +1259,7 @@ export default {
           this.logoForm = {
             logo_type: res.logo_type || 'text',
             logo_text: res.logo_text || 'Dance Studio',
-            logo_image: res.logo_image || '',
-            splash_image: res.splash_image || ''
+            logo_image: res.logo_image || ''
           };
         }
       } catch (err) {
@@ -1389,41 +1303,6 @@ export default {
       }
     },
 
-    triggerSplashUpload() {
-      if (this.$refs.splashFileInput) {
-        this.$refs.splashFileInput.click();
-      }
-    },
-
-    async handleSplashFileSelect(e) {
-      const file = e.target.files?.[0];
-      if (!file) return;
-
-      if (file.size > 5 * 1024 * 1024) {
-        showToast('圖片檔案大小不得超過 5MB', 'warning');
-        return;
-      }
-
-      this.isUploadingSplash = true;
-      const formData = new FormData();
-      formData.append('file', file);
-
-      try {
-        const res = await api.post('/upload/splash-image', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        });
-        if (res && res.image_url) {
-          this.logoForm.splash_image = res.image_url;
-          showToast('開場圖片上傳成功！', 'success');
-        }
-      } catch (err) {
-        showToast(err.message || '開場圖片上傳失敗', 'danger');
-      } finally {
-        this.isUploadingSplash = false;
-        e.target.value = '';
-      }
-    },
-
     async saveLogoSettings() {
       if (this.logoForm.logo_type === 'text' && !this.logoForm.logo_text.trim()) {
         showToast('請輸入品牌文字名稱', 'warning');
@@ -1439,17 +1318,15 @@ export default {
         const res = await api.put('/site-settings/logo', {
           logo_type: this.logoForm.logo_type,
           logo_text: this.logoForm.logo_text.trim(),
-          logo_image: this.logoForm.logo_image.trim(),
-          splash_image: (this.logoForm.splash_image || '').trim()
+          logo_image: this.logoForm.logo_image.trim()
         });
-        showToast('主導航列 LOGO 與開場圖設定已成功儲存！', 'success');
+        showToast('主導航列 LOGO 設定已成功儲存！', 'success');
         // 廣播給 Navbar 與 App.vue 即時更新
         window.dispatchEvent(new CustomEvent('logo-settings-updated', {
           detail: {
             logo_type: this.logoForm.logo_type,
             logo_text: this.logoForm.logo_text.trim(),
-            logo_image: this.logoForm.logo_image.trim(),
-            splash_image: (this.logoForm.splash_image || '').trim()
+            logo_image: this.logoForm.logo_image.trim()
           }
         }));
       } catch (err) {

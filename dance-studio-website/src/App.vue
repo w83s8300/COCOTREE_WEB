@@ -1,16 +1,5 @@
 <template>
   <div id="app">
-    <!-- Splash Screen -->
-    <Transition name="fade">
-      <div v-if="showSplash" class="splash-screen">
-        <img
-          :src="currentSplashImage"
-          alt="Dance Studio Logo"
-          class="splash-logo"
-        />
-      </div>
-    </Transition>
-
     <!-- Navbar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top" aria-label="主導航列">
       <div class="container-fluid">
@@ -163,14 +152,12 @@ export default {
   },
   data() {
     return {
-      showSplash: true,
       auth: useStudentAuth(),
       userDropdownOpen: false,
       logoSettings: {
         logo_type: 'text',
         logo_text: 'Dance Studio',
-        logo_image: '',
-        splash_image: ''
+        logo_image: ''
       },
       navLinks: [
         { to: '/', label: '首頁' },
@@ -198,15 +185,6 @@ export default {
     },
     currentStudent() {
       return this.auth.state.student
-    },
-    currentSplashImage() {
-      if (this.logoSettings.splash_image) {
-        return this.logoSettings.splash_image
-      }
-      if (this.logoSettings.logo_type === 'image' && this.logoSettings.logo_image) {
-        return this.logoSettings.logo_image
-      }
-      return '/favicon.ico'
     }
   },
   methods: {
@@ -269,12 +247,6 @@ export default {
   mounted() {
     this.fetchLogoSettings()
     window.addEventListener('logo-settings-updated', this.onLogoSettingsUpdated)
-
-    // Shorter splash - dismiss after 1.2s (was 2.5s)
-    setTimeout(() => {
-      this.showSplash = false
-    }, 1200)
-
     document.addEventListener('click', this.handleClickOutside)
 
     // Automatically refresh student profile if logged in
@@ -290,44 +262,6 @@ export default {
 </script>
 
 <style>
-/* Splash Screen */
-.splash-screen {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: #000;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 9999;
-}
-
-.splash-logo {
-  max-width: 200px;
-  max-height: 200px;
-  width: auto;
-  height: auto;
-  object-fit: contain;
-  animation: pulse 1.5s infinite alternate;
-}
-
-@keyframes pulse {
-  from { transform: scale(1); }
-  to { transform: scale(1.1); }
-}
-
-/* Vue Transition for splash */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.8s ease;
-}
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-
 /* Content layout - seamlessly attaches to fixed navbar without white gap */
 .content-wrapper {
   padding-top: 56px;
