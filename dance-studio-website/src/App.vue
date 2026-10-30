@@ -1,5 +1,16 @@
 <template>
   <div id="app">
+    <!-- Splash Screen -->
+    <Transition name="fade">
+      <div v-if="showSplash" class="splash-screen">
+        <img
+          :src="currentSplashImage"
+          alt="Dance Studio Logo"
+          class="splash-logo"
+        />
+      </div>
+    </Transition>
+
     <!-- Navbar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top" aria-label="主導航列">
       <div class="container-fluid">
@@ -142,6 +153,22 @@ import { useStudentAuth } from './utils/auth'
 import { showToast } from './utils/toast'
 import api from './utils/api'
 
+function getCachedLogoSettings() {
+  try {
+    const saved = localStorage.getItem('site_logo_settings')
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      if (parsed && typeof parsed === 'object') return parsed
+    }
+  } catch (e) {}
+  return {
+    logo_type: 'image',
+    logo_text: 'coconuttreedancestudio',
+    logo_image: '/favicon.png',
+    splash_image: '/favicon.png'
+  }
+}
+
 export default {
   name: 'App',
   components: {
@@ -152,13 +179,10 @@ export default {
   },
   data() {
     return {
+      showSplash: true,
       auth: useStudentAuth(),
       userDropdownOpen: false,
-      logoSettings: {
-        logo_type: 'text',
-        logo_text: 'Dance Studio',
-        logo_image: ''
-      },
+      logoSettings: getCachedLogoSettings(),
       navLinks: [
         { to: '/', label: '首頁' },
         { to: '/about', label: '關於我們' },
@@ -185,6 +209,15 @@ export default {
     },
     currentStudent() {
       return this.auth.state.student
+    },
+    currentSplashImage() {
+      if (this.logoSettings.splash_image) {
+        return this.logoSettings.splash_image
+      }
+      if (this.logoSettings.logo_type === 'image' && this.logoSettings.logo_image) {
+        return this.logoSettings.logo_image
+      }
+      return '/favicon.png'
     }
   },
   methods: {
@@ -229,10 +262,13 @@ export default {
         if (res && (res.success || res.logo_type)) {
           this.logoSettings = {
             logo_type: res.logo_type || 'text',
-            logo_text: res.logo_text || 'Dance Studio',
+            logo_text: res.logo_text || 'coconuttreedancestudio',
             logo_image: res.logo_image || '',
             splash_image: res.splash_image || ''
           }
+          try {
+            localStorage.setItem('site_logo_settings', JSON.stringify(this.logoSettings))
+          } catch (e) {}
         }
       } catch (err) {
         // 載入失敗使用預設文字
@@ -241,12 +277,21 @@ export default {
     onLogoSettingsUpdated(e) {
       if (e?.detail) {
         this.logoSettings = { ...this.logoSettings, ...e.detail }
+        try {
+          localStorage.setItem('site_logo_settings', JSON.stringify(this.logoSettings))
+        } catch (e) {}
       }
     }
   },
   mounted() {
     this.fetchLogoSettings()
     window.addEventListener('logo-settings-updated', this.onLogoSettingsUpdated)
+
+    // 開場過場畫面播放 1.5 秒後優雅淡出
+    setTimeout(() => {
+      this.showSplash = false
+    }, 1500)
+
     document.addEventListener('click', this.handleClickOutside)
 
     // Automatically refresh student profile if logged in
@@ -262,6 +307,52 @@ export default {
 </script>
 
 <style>
+/* Splash Screen (開場過場) */
+.splash-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #0d0e12;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 99999;
+}
+
+.splash-logo {
+  max-width: 240px;
+  max-height: 240px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  animation: splashPulse 1.4s ease-in-out infinite alternate;
+}
+
+@keyframes splashPulse {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.9;
+    filter: drop-shadow(0 0 10px rgba(13, 110, 253, 0.3));
+  }
+  100% {
+    transform: scale(1.05);
+    opacity: 1;
+    filter: drop-shadow(0 0 25px rgba(13, 110, 253, 0.7));
+  }
+}
+
+/* Vue Transition for splash */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
 /* Content layout - seamlessly attaches to fixed navbar without white gap */
 .content-wrapper {
   padding-top: 56px;
