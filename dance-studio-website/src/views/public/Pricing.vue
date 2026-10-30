@@ -195,12 +195,12 @@
                 <i class="bi bi-bank me-1"></i>工作室轉帳匯款帳號資訊：
               </div>
               <div class="font-monospace lh-base">
-                銀行：國泰世華銀行 (013)<br>
-                帳號：<strong>012-34-567890-1</strong><br>
-                戶名：Dance Studio 舞蹈工作室
+                銀行：{{ bankInfo.bank_name }} ({{ bankInfo.bank_code }})<br>
+                帳號：<strong>{{ bankInfo.bank_account }}</strong><br>
+                戶名：{{ bankInfo.bank_account_name }}
               </div>
               <div class="text-muted mt-2" style="font-size: 0.8rem;">
-                * 請先完成匯款後，於下方填寫您的轉帳帳號後 5 碼，以便工作人員核帳開通堂數。
+                * {{ bankInfo.bank_notes || '請先完成匯款後，於下方填寫您的轉帳帳號後 5 碼，以便工作人員核帳開通堂數。' }}
               </div>
             </div>
 
@@ -356,6 +356,15 @@ export default {
         ]
       },
 
+      // 工作室轉帳匯款帳號 (預設值 + 後台即時連動)
+      bankInfo: {
+        bank_name: '國泰世華銀行',
+        bank_code: '013',
+        bank_account: '012-34-567890-1',
+        bank_account_name: 'Dance Studio 舞蹈工作室',
+        bank_notes: '請先完成匯款後，於下方填寫您的轉帳帳號後 5 碼，以便工作人員核帳開通堂數。'
+      },
+
       // 買課狀態
       selectedPlan: null,
       pendingPlan: null,
@@ -425,6 +434,9 @@ export default {
         if (res.success) {
           if (res.plans && res.plans.length > 0) {
             this.plans = res.plans;
+          }
+          if (res.bank_info) {
+            this.bankInfo = Object.assign({}, this.bankInfo, res.bank_info);
           }
           if (res.notice) {
             this.notice.title = res.notice.title || '學員報名與上課須知';

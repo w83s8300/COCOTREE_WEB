@@ -6,7 +6,7 @@
         <h2 class="fw-bold mb-1">
           <i class="bi bi-tags-fill text-primary me-2"></i>課程價目表與購課管理
         </h2>
-        <p class="text-muted small mb-0">管理學員線上買課訂單審核、前台價目方案與學員上課須知</p>
+        <p class="text-muted small mb-0">管理學員線上買課訂單審核、前台價目方案、學員上課須知與工作室轉帳帳號</p>
       </div>
       <div class="d-flex gap-2">
         <a
@@ -62,6 +62,18 @@
         >
           <i class="bi bi-info-circle-fill me-1"></i>
           上課須知設定
+        </button>
+      </li>
+      <li class="nav-item">
+        <button
+          class="nav-link py-2 px-3 fw-bold position-relative"
+          :class="{ active: activeTab === 'bank' }"
+          @click="switchTab('bank')"
+        >
+          <i class="bi bi-bank me-1"></i>
+          轉帳帳號設定
+          <span v-if="isAdmin" class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1 small">管理員專用</span>
+          <span v-else class="badge bg-secondary-subtle text-secondary border border-secondary-subtle ms-1 small">唯讀</span>
         </button>
       </li>
     </ul>
@@ -453,6 +465,157 @@
                 <i v-else class="bi bi-check-lg"></i>
                 <span>儲存須知設定</span>
               </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== Tab 4: 轉帳帳號設定 (僅系統管理員可編輯) ==================== -->
+    <div v-else-if="activeTab === 'bank'" class="row justify-content-center">
+      <div class="col-lg-10">
+        <!-- 權限提示 -->
+        <div v-if="!isAdmin" class="alert alert-warning d-flex align-items-center mb-4 shadow-sm border-warning rounded-3" role="alert">
+          <i class="bi bi-shield-lock-fill fs-3 me-3 text-warning"></i>
+          <div>
+            <h6 class="fw-bold mb-1">權限提示（唯讀模式）</h6>
+            <div class="small text-secondary">
+              您目前的角色為 <strong>{{ adminAuth.roleLabel }}</strong>。依工作室安全規範，<strong>只有「系統管理員（admin）」</strong>具備修改轉帳匯款帳號之權限，其餘人員僅供查閱。
+            </div>
+          </div>
+        </div>
+        <div v-else class="alert alert-success-subtle d-flex align-items-center mb-4 shadow-sm border-success-subtle rounded-3" role="alert">
+          <i class="bi bi-shield-check fs-3 me-3 text-success"></i>
+          <div>
+            <h6 class="fw-bold mb-1 text-success">系統管理員專屬權限</h6>
+            <div class="small text-secondary">
+              您已具備<strong>「系統管理員」</strong>最高權限，在此修改的銀行代碼、帳號與戶名將即時同步至全站前台【學員買課確認彈窗】。
+            </div>
+          </div>
+        </div>
+
+        <div class="row g-4">
+          <!-- 左側：設定表單 -->
+          <div class="col-lg-7">
+            <div class="card border-0 shadow-sm rounded-3">
+              <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+                <h5 class="fw-bold mb-0 text-dark">
+                  <i class="bi bi-bank text-primary me-2"></i>工作室轉帳匯款帳號設定
+                </h5>
+                <span v-if="isAdmin" class="badge bg-success">
+                  <i class="bi bi-unlock-fill me-1"></i>可編輯
+                </span>
+                <span v-else class="badge bg-secondary">
+                  <i class="bi bi-lock-fill me-1"></i>唯讀鎖定
+                </span>
+              </div>
+              <div class="card-body p-4">
+                <form @submit.prevent="saveBankAccount">
+                  <div class="row g-3">
+                    <div class="col-md-7">
+                      <label class="form-label fw-bold">銀行名稱 <span class="text-danger">*</span></label>
+                      <input
+                        type="text"
+                        v-model.trim="bankForm.bank_name"
+                        class="form-control"
+                        :disabled="!isAdmin || savingBank"
+                        placeholder="例如：國泰世華銀行、中國信託"
+                        required
+                      />
+                    </div>
+                    <div class="col-md-5">
+                      <label class="form-label fw-bold">銀行代碼 <span class="text-danger">*</span></label>
+                      <input
+                        type="text"
+                        v-model.trim="bankForm.bank_code"
+                        class="form-control font-monospace"
+                        :disabled="!isAdmin || savingBank"
+                        placeholder="例如：013、822"
+                        required
+                      />
+                    </div>
+                    <div class="col-12">
+                      <label class="form-label fw-bold">銀行帳號 <span class="text-danger">*</span></label>
+                      <input
+                        type="text"
+                        v-model.trim="bankForm.bank_account"
+                        class="form-control font-monospace fs-5"
+                        :disabled="!isAdmin || savingBank"
+                        placeholder="例如：012-34-567890-1"
+                        required
+                      />
+                    </div>
+                    <div class="col-12">
+                      <label class="form-label fw-bold">帳戶戶名 <span class="text-danger">*</span></label>
+                      <input
+                        type="text"
+                        v-model.trim="bankForm.bank_account_name"
+                        class="form-control"
+                        :disabled="!isAdmin || savingBank"
+                        placeholder="例如：Dance Studio 舞蹈工作室"
+                        required
+                      />
+                    </div>
+                    <div class="col-12">
+                      <label class="form-label fw-bold">匯款附註與學員注意事項說明</label>
+                      <textarea
+                        v-model.trim="bankForm.bank_notes"
+                        rows="3"
+                        class="form-control"
+                        :disabled="!isAdmin || savingBank"
+                        placeholder="例如：請先完成匯款後，於下方填寫您的轉帳帳號後 5 碼，以便工作人員核帳開通堂數。"
+                      ></textarea>
+                    </div>
+                  </div>
+
+                  <div class="mt-4 pt-3 border-top d-flex justify-content-between align-items-center">
+                    <div class="text-muted small">
+                      <span v-if="isAdmin">* 儲存後立即於前台官網買課流程生效</span>
+                      <span v-else class="text-danger">* 您無權修改此設定</span>
+                    </div>
+                    <button
+                      v-if="isAdmin"
+                      type="submit"
+                      class="btn btn-primary px-4 py-2 fw-bold d-flex align-items-center gap-2 shadow-sm"
+                      :disabled="savingBank"
+                    >
+                      <span v-if="savingBank" class="spinner-border spinner-border-sm" role="status"></span>
+                      <i v-else class="bi bi-check-circle-fill"></i>
+                      <span>儲存轉帳帳號設定</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+
+          <!-- 右側：即時前台預覽卡片 -->
+          <div class="col-lg-5">
+            <div class="card border-0 shadow-sm rounded-3 h-100">
+              <div class="card-header bg-white py-3 border-bottom">
+                <h6 class="fw-bold mb-0 text-dark">
+                  <i class="bi bi-eye-fill text-primary me-2"></i>前台學員買課彈窗即時預覽
+                </h6>
+              </div>
+              <div class="card-body p-4 bg-light d-flex flex-column justify-content-center">
+                <div class="p-3 bg-primary-subtle text-primary-emphasis rounded-3 border border-primary-subtle shadow-sm small">
+                  <div class="fw-bold mb-1">
+                    <i class="bi bi-bank me-1"></i>工作室轉帳匯款帳號資訊：
+                  </div>
+                  <div class="font-monospace lh-base">
+                    銀行：{{ bankForm.bank_name || '（尚未填寫銀行）' }} ({{ bankForm.bank_code || '---' }})<br>
+                    帳號：<strong class="text-dark">{{ bankForm.bank_account || '尚未設定' }}</strong><br>
+                    戶名：{{ bankForm.bank_account_name || '尚未設定' }}
+                  </div>
+                  <div v-if="bankForm.bank_notes" class="text-muted mt-2" style="font-size: 0.8rem;">
+                    * {{ bankForm.bank_notes }}
+                  </div>
+                </div>
+
+                <div class="mt-3 text-center text-muted small">
+                  <i class="bi bi-info-circle me-1"></i>此卡片為學員於「課程價目表」點選買課時看到的實時效果
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -963,11 +1126,12 @@ export default {
   data() {
     return {
       adminAuth: useAdminAuth(),
-      activeTab: 'orders', // 'orders' | 'plans' | 'notice'
+      activeTab: 'orders', // 'orders' | 'plans' | 'notice' | 'bank'
       loading: false,
       error: null,
       submitting: false,
       savingNotice: false,
+      savingBank: false,
       processingOrder: false,
 
       // 方案管理
@@ -997,6 +1161,15 @@ export default {
         content: ''
       },
 
+      // 轉帳帳號設定 (系統管理員專屬)
+      bankForm: {
+        bank_name: '國泰世華銀行',
+        bank_code: '013',
+        bank_account: '012-34-567890-1',
+        bank_account_name: 'Dance Studio 舞蹈工作室',
+        bank_notes: '請先完成匯款後，於下方填寫您的轉帳帳號後 5 碼，以便工作人員核帳開通堂數。'
+      },
+
       // 購課訂單
       orders: [],
       pendingOrdersCount: 0,
@@ -1016,6 +1189,9 @@ export default {
     };
   },
   computed: {
+    isAdmin() {
+      return this.adminAuth.currentRole === 'admin';
+    },
     parsedNoticeItems() {
       if (!this.noticeForm.content) return [];
       return this.noticeForm.content
@@ -1047,6 +1223,7 @@ export default {
     this.initModals();
     this.fetchOrders();
     this.fetchPlansData();
+    this.fetchBankInfo();
   },
   beforeUnmount() {
     if (this.modalInstance) this.modalInstance.dispose();
@@ -1071,6 +1248,8 @@ export default {
     refreshCurrentTab() {
       if (this.activeTab === 'orders') {
         this.fetchOrders();
+      } else if (this.activeTab === 'bank') {
+        this.fetchBankInfo();
       } else {
         this.fetchPlansData();
       }
@@ -1221,6 +1400,9 @@ export default {
           if (res.notice) {
             this.noticeForm.title = res.notice.title || '學員報名與上課須知';
             this.noticeForm.content = res.notice.content || '';
+          }
+          if (res.bank_info) {
+            this.bankForm = Object.assign({}, this.bankForm, res.bank_info);
           }
         } else {
           this.error = res.error || '載入價目表失敗';
@@ -1396,6 +1578,65 @@ export default {
         showToast(err.message || '儲存失敗', 'error');
       } finally {
         this.savingNotice = false;
+      }
+    },
+
+    // ---------------- 轉帳帳號相關 (僅系統管理員) ----------------
+    async fetchBankInfo() {
+      try {
+        const res = await api.get(API_ENDPOINTS.PRICING_BANK_ACCOUNT);
+        if (res.success && res.bank_info) {
+          this.bankForm = Object.assign({}, this.bankForm, res.bank_info);
+        }
+      } catch (err) {
+        console.error('查詢轉帳帳號失敗:', err);
+      }
+    },
+    async saveBankAccount() {
+      if (!this.isAdmin) {
+        showToast('權限不足！只有「系統管理員（admin）」具備修改轉帳帳號之權限。', 'error');
+        return;
+      }
+      if (!this.bankForm.bank_name.trim()) {
+        showToast('請輸入銀行名稱', 'warning');
+        return;
+      }
+      if (!this.bankForm.bank_code.trim()) {
+        showToast('請輸入銀行代碼', 'warning');
+        return;
+      }
+      if (!this.bankForm.bank_account.trim()) {
+        showToast('請輸入轉帳帳號', 'warning');
+        return;
+      }
+      if (!this.bankForm.bank_account_name.trim()) {
+        showToast('請輸入戶名', 'warning');
+        return;
+      }
+
+      this.savingBank = true;
+      try {
+        const payload = {
+          admin_user_id: this.adminAuth.currentUser?.id,
+          bank_name: this.bankForm.bank_name.trim(),
+          bank_code: this.bankForm.bank_code.trim(),
+          bank_account: this.bankForm.bank_account.trim(),
+          bank_account_name: this.bankForm.bank_account_name.trim(),
+          bank_notes: (this.bankForm.bank_notes || '').trim()
+        };
+        const res = await api.put(API_ENDPOINTS.PRICING_BANK_ACCOUNT, payload);
+        if (res.success) {
+          showToast(res.message || '工作室轉帳匯款帳號已成功更新！', 'success');
+          if (res.bank_info) {
+            this.bankForm = Object.assign({}, this.bankForm, res.bank_info);
+          }
+        } else {
+          showToast(res.error || '儲存失敗', 'error');
+        }
+      } catch (err) {
+        showToast(err.message || '儲存轉帳帳號失敗', 'error');
+      } finally {
+        this.savingBank = false;
       }
     }
   }

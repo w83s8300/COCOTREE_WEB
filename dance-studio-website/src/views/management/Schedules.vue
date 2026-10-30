@@ -4,7 +4,7 @@
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
       <h2 class="mb-0">課程時間表管理</h2>
       <div class="d-flex align-items-center gap-2">
-        <router-link to="/admin/teacher-attendance" class="btn btn-success fw-bold shadow-sm">
+        <router-link v-if="adminAuth.canAccess('/admin/teacher-attendance')" to="/admin/teacher-attendance" class="btn btn-success fw-bold shadow-sm">
           <i class="bi bi-clock-history me-1"></i>老師授課打卡
         </router-link>
         <button @click="addNewSchedule" class="btn btn-primary">
@@ -223,7 +223,7 @@
                   </div>
                   <div class="schedule-actions">
                     <div class="d-flex flex-wrap gap-1 justify-content-center">
-                      <button @click.stop="goToAttendance(schedule)" class="btn btn-sm btn-success text-white fw-bold px-2" title="前往本堂課打卡">
+                      <button v-if="adminAuth.canAccess('/admin/teacher-attendance')" @click.stop="goToAttendance(schedule)" class="btn btn-sm btn-success text-white fw-bold px-2" title="前往本堂課打卡">
                         <i class="bi bi-box-arrow-in-right me-1"></i>打卡
                       </button>
                       <button @click.stop="editSchedule(schedule.id)" class="btn btn-sm btn-light">編輯</button>
@@ -297,7 +297,7 @@
                 </div>
                 <div class="schedule-actions mt-2">
                   <div class="d-flex flex-wrap gap-2">
-                    <button @click.stop="goToAttendance(schedule)" class="btn btn-sm btn-success text-white fw-bold">
+                    <button v-if="adminAuth.canAccess('/admin/teacher-attendance')" @click.stop="goToAttendance(schedule)" class="btn btn-sm btn-success text-white fw-bold">
                       <i class="bi bi-box-arrow-in-right me-1"></i>上課打卡
                     </button>
                     <button @click.stop="editSchedule(schedule.id)" class="btn btn-sm btn-light">編輯</button>
@@ -617,7 +617,7 @@
               type="button" 
               class="btn btn-success fw-bold" 
               @click="goToAttendance(selectedSchedule)"
-              v-if="selectedSchedule"
+              v-if="selectedSchedule && adminAuth.canAccess('/admin/teacher-attendance')"
             >
               <i class="bi bi-box-arrow-in-right me-1"></i>前往此課程打卡
             </button>

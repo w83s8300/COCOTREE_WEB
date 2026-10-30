@@ -53,8 +53,8 @@
         </div>
       </div>
 
-      <!-- 本月主打星切換開關 -->
-      <div class="form-group mb-3">
+      <!-- 本月主打星切換開關 (僅系統管理員 admin 可設定) -->
+      <div v-if="isAdmin" class="form-group mb-3">
         <div class="form-check form-switch p-3 bg-light rounded-3 border">
           <input
             class="form-check-input ms-0 me-3"
@@ -145,6 +145,7 @@
 <script>
 import api, { API_ENDPOINTS } from '@/utils/api';
 import { showToast } from '@/utils/toast';
+import { useAdminAuth } from '@/utils/adminAuth';
 
 export default {
   props: {
@@ -156,6 +157,7 @@ export default {
   emits: ['teacher-updated', 'close-modal'],
   data() {
     return {
+      adminAuth: useAdminAuth(),
       teacher: {
         name: '',
         email: '',
@@ -175,6 +177,11 @@ export default {
       submitting: false,
       uploadingAvatar: false
     };
+  },
+  computed: {
+    isAdmin() {
+      return this.adminAuth?.currentRole === 'admin';
+    }
   },
   watch: {
     teacherId: {
@@ -260,7 +267,11 @@ export default {
     },
     addTeacher() {
       this.submitting = true;
-      api.post(API_ENDPOINTS.TEACHERS, this.teacher)
+      const payload = { ...this.teacher };
+      if (!this.isAdmin) {
+        delete payload.is_featured;
+      }
+      api.post(API_ENDPOINTS.TEACHERS, payload)
         .then(() => {
           showToast('老師新增成功！', 'success');
           this.$emit('teacher-updated');
@@ -287,7 +298,11 @@ export default {
     },
     updateTeacher() {
       this.submitting = true;
-      api.put(`${API_ENDPOINTS.TEACHERS}/${this.teacher.id}`, this.teacher)
+      const payload = { ...this.teacher };
+      if (!this.isAdmin) {
+        delete payload.is_featured;
+      }
+      api.put(`${API_ENDPOINTS.TEACHERS}/${this.teacher.id}`, payload)
         .then(() => {
           showToast('老師更新成功！', 'success');
           this.$emit('teacher-updated');

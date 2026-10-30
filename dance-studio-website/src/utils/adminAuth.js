@@ -37,7 +37,6 @@ const ROLE_PERMISSIONS = {
   desk: [
     '/admin/banners',
     '/admin/attendance',
-    '/admin/teacher-attendance',
     '/admin/schedules',
     '/admin/students',
     '/admin/courses',
@@ -48,7 +47,6 @@ const ROLE_PERMISSIONS = {
     '/admin/line-settings'
   ],
   teacher: [
-    '/admin/banners',
     '/admin/teacher-attendance',
     '/admin/schedules',
     '/admin/teachers'
@@ -83,7 +81,6 @@ export const useAdminAuth = () => {
   }
 
   const canAccess = (path) => {
-    if (path.startsWith('/admin/banners')) return true
     if (!state.user || !state.user.role) return true
     if (state.user.role === 'admin') return true
     const allowed = ROLE_PERMISSIONS[state.user.role] || []

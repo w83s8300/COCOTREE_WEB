@@ -461,7 +461,12 @@ def init_database_tables():
             seed_pricing_settings = """
             INSERT IGNORE INTO system_settings (setting_key, setting_value, description) VALUES
             ('pricing_notice_title', '學員報名與上課須知', '課程價目表須知標題'),
-            ('pricing_notice_content', '所有常規課程皆需提前於線上系統或向官方 LINE 預約登記。\n堂數方案為個人專屬權益，限本人上課使用，不得轉讓或轉售他人。\n方案自購買啟用起計，請於各方案指定之有效期限內使用完畢。\n若需取消或請假，請最晚於課程開始前 2 小時完成線上取消，以免扣除堂數。\n如遇天然災害或政府宣佈停班停課，本工作室常規課程將自動順延。', '課程價目表學員須知內容(每行一項)')
+            ('pricing_notice_content', '所有常規課程皆需提前於線上系統或向官方 LINE 預約登記。\n堂數方案為個人專屬權益，限本人上課使用，不得轉讓或轉售他人。\n方案自購買啟用起計，請於各方案指定之有效期限內使用完畢。\n若需取消或請假，請最晚於課程開始前 2 小時完成線上取消，以免扣除堂數。\n如遇天然災害或政府宣佈停班停課，本工作室常規課程將自動順延。', '課程價目表學員須知內容(每行一項)'),
+            ('bank_name', '國泰世華銀行', '工作室匯款銀行名稱'),
+            ('bank_code', '013', '工作室匯款銀行代碼'),
+            ('bank_account', '012-34-567890-1', '工作室匯款帳號'),
+            ('bank_account_name', 'Dance Studio 舞蹈工作室', '工作室匯款戶名'),
+            ('bank_notes', '請先完成匯款後，於下方填寫您的轉帳帳號後 5 碼，以便工作人員核帳開通堂數。', '工作室匯款附註與說明')
             """
             cursor.execute(seed_pricing_settings)
 
@@ -5867,7 +5872,7 @@ class PricingListResource(Resource):
 
                 cursor.execute("""
                     SELECT setting_key, setting_value FROM system_settings 
-                    WHERE setting_key IN ('pricing_notice_title', 'pricing_notice_content')
+                    WHERE setting_key IN ('pricing_notice_title', 'pricing_notice_content', 'bank_name', 'bank_code', 'bank_account', 'bank_account_name', 'bank_notes')
                 """)
                 settings_rows = cursor.fetchall()
                 settings_dict = {s['setting_key']: s['setting_value'] for s in settings_rows}
@@ -5875,6 +5880,14 @@ class PricingListResource(Resource):
                 notice_title = settings_dict.get('pricing_notice_title') or '學員報名與上課須知'
                 notice_content = settings_dict.get('pricing_notice_content') or ''
                 notice_items = [line.strip() for line in notice_content.split('\n') if line.strip()]
+
+                bank_info = {
+                    'bank_name': settings_dict.get('bank_name') or '國泰世華銀行',
+                    'bank_code': settings_dict.get('bank_code') or '013',
+                    'bank_account': settings_dict.get('bank_account') or '012-34-567890-1',
+                    'bank_account_name': settings_dict.get('bank_account_name') or 'Dance Studio 舞蹈工作室',
+                    'bank_notes': settings_dict.get('bank_notes') if settings_dict.get('bank_notes') is not None else '請先完成匯款後，於下方填寫您的轉帳帳號後 5 碼，以便工作人員核帳開通堂數。'
+                }
 
                 return {
                     'success': True,
@@ -5884,7 +5897,8 @@ class PricingListResource(Resource):
                         'title': notice_title,
                         'content': notice_content,
                         'items': notice_items
-                    }
+                    },
+                    'bank_info': bank_info
                 }, 200
             finally:
                 cursor.close()
@@ -6140,6 +6154,104 @@ class PricingNoticeResource(Resource):
         except Exception as e:
             return {'error': f'更新上課須知失敗: {str(e)}'}, 500
 
+class PricingBankAccountResource(Resource):
+    def get(self):
+        """取得工作室轉帳匯款帳號資訊"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("""
+                    SELECT setting_key, setting_value FROM system_settings 
+                    WHERE setting_key IN ('bank_name', 'bank_code', 'bank_account', 'bank_account_name', 'bank_notes')
+                """)
+                rows = cursor.fetchall()
+                s_dict = {r['setting_key']: r['setting_value'] for r in rows}
+                bank_info = {
+                    'bank_name': s_dict.get('bank_name') or '國泰世華銀行',
+                    'bank_code': s_dict.get('bank_code') or '013',
+                    'bank_account': s_dict.get('bank_account') or '012-34-567890-1',
+                    'bank_account_name': s_dict.get('bank_account_name') or 'Dance Studio 舞蹈工作室',
+                    'bank_notes': s_dict.get('bank_notes') if s_dict.get('bank_notes') is not None else '請先完成匯款後，於下方填寫您的轉帳帳號後 5 碼，以便工作人員核帳開通堂數。'
+                }
+                return {
+                    'success': True,
+                    'bank_info': bank_info
+                }, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'查詢匯款帳號資訊失敗: {str(e)}'}, 500
+
+    def put(self):
+        """更新工作室轉帳匯款帳號資訊 (限定系統管理員 admin 權限)"""
+        try:
+            data = request.get_json() or {}
+            admin_user_id = data.get('admin_user_id')
+            if not admin_user_id:
+                return {'error': '缺少管理員識別資訊，請先登入系統管理員帳號'}, 401
+
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                # 驗證操作者是否為 admin
+                cursor.execute("SELECT id, name, role FROM admin_users WHERE id = %s", (admin_user_id,))
+                user = cursor.fetchone()
+                if not user or user.get('role') != 'admin':
+                    return {'error': '權限不足！只有「系統管理員（admin）」具備修改工作室轉帳匯款帳號的權限。'}, 403
+
+                bank_name = (data.get('bank_name') or '').strip()
+                bank_code = (data.get('bank_code') or '').strip()
+                bank_account = (data.get('bank_account') or '').strip()
+                bank_account_name = (data.get('bank_account_name') or '').strip()
+                bank_notes = (data.get('bank_notes') or '').strip()
+
+                if not bank_name:
+                    return {'error': '請輸入銀行名稱'}, 400
+                if not bank_code:
+                    return {'error': '請輸入銀行代碼'}, 400
+                if not bank_account:
+                    return {'error': '請輸入轉帳帳號'}, 400
+                if not bank_account_name:
+                    return {'error': '請輸入戶名'}, 400
+
+                settings_to_update = [
+                    ('bank_name', bank_name, '工作室匯款銀行名稱'),
+                    ('bank_code', bank_code, '工作室匯款銀行代碼'),
+                    ('bank_account', bank_account, '工作室匯款帳號'),
+                    ('bank_account_name', bank_account_name, '工作室匯款戶名'),
+                    ('bank_notes', bank_notes, '工作室匯款附註與說明')
+                ]
+                for key, val, desc in settings_to_update:
+                    cursor.execute("""
+                        INSERT INTO system_settings (setting_key, setting_value, description)
+                        VALUES (%s, %s, %s)
+                        ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+                    """, (key, val, desc))
+
+                connection.commit()
+                return {
+                    'success': True,
+                    'message': '工作室轉帳匯款帳號資訊已成功更新！前台將即時生效。',
+                    'bank_info': {
+                        'bank_name': bank_name,
+                        'bank_code': bank_code,
+                        'bank_account': bank_account,
+                        'bank_account_name': bank_account_name,
+                        'bank_notes': bank_notes
+                    }
+                }, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'更新匯款帳號資訊失敗: {str(e)}'}, 500
+
 class PricingToggleActiveResource(Resource):
     def post(self, plan_id):
         """切換方案上架/下架啟用狀態"""
@@ -6197,6 +6309,7 @@ class PricingTogglePopularResource(Resource):
 api.add_resource(PricingListResource, '/api/pricing')
 api.add_resource(PricingItemResource, '/api/pricing/<int:plan_id>')
 api.add_resource(PricingNoticeResource, '/api/pricing/notice')
+api.add_resource(PricingBankAccountResource, '/api/pricing/bank-account')
 api.add_resource(PricingToggleActiveResource, '/api/pricing/<int:plan_id>/toggle-active')
 api.add_resource(PricingTogglePopularResource, '/api/pricing/<int:plan_id>/toggle-popular')
 

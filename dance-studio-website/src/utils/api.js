@@ -52,6 +52,7 @@ export const API_ENDPOINTS = {
   ENROLLMENTS: '/enrollments',
   NEWS: '/news',
   PRICING: '/pricing',
+  PRICING_BANK_ACCOUNT: '/pricing/bank-account',
   PRICING_ORDERS: '/pricing/orders',
   BANNERS: '/banners'
 }

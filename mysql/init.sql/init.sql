@@ -330,6 +330,11 @@ CREATE TABLE IF NOT EXISTS pricing_plans (
 
 INSERT IGNORE INTO system_settings (setting_key, setting_value, description) VALUES
 ('pricing_notice_title', '學員報名與上課須知', '課程價目表須知標題'),
+('bank_name', '國泰世華銀行', '工作室匯款銀行名稱'),
+('bank_code', '013', '工作室匯款銀行代碼'),
+('bank_account', '012-34-567890-1', '工作室匯款帳號'),
+('bank_account_name', 'Dance Studio 舞蹈工作室', '工作室匯款戶名'),
+('bank_notes', '請先完成匯款後，於下方填寫您的轉帳帳號後 5 碼，以便工作人員核帳開通堂數。', '工作室匯款附註與說明'),
 ('pricing_notice_content', '所有常規課程皆需提前於線上系統或向官方 LINE 預約登記。\n堂數方案為個人專屬權益，限本人上課使用，不得轉讓或轉售他人。\n方案自購買啟用起計，請於各方案指定之有效期限內使用完畢。\n若需取消或請假，請最晚於課程開始前 2 小時完成線上取消，以免扣除堂數。\n如遇天然災害或政府宣佈停班停課，本工作室常規課程將自動順延。', '課程價目表學員須知內容(每行一項)');
 
 INSERT INTO pricing_plans (id, title, subtitle, price, unit, original_price, is_popular, features, button_text, button_link, sort_order, is_active)

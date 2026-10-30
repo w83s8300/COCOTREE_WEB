@@ -128,7 +128,7 @@ export default {
         { to: '/admin/pricing', label: '課程價目表管理', icon: 'bi bi-tags' },
         { to: '/admin/news', label: '消息與活動管理', icon: 'bi bi-newspaper' },
         { to: '/admin/gallery', label: '活動花絮管理', icon: 'bi bi-images' },
-        { to: '/admin/banners', label: '首頁橫幅管理', icon: 'bi bi-card-image', badge: '首頁' },
+        { to: '/admin/banners', label: '全站橫幅管理', icon: 'bi bi-card-image', badge: '全站' },
         { to: '/admin/rooms', label: '教室管理', icon: 'bi bi-door-open' },
         { to: '/admin/styles', label: '舞風管理', icon: 'bi bi-music-note-beamed' },
         { to: '/admin/line-settings', label: 'LINE 整合設定', icon: 'bi bi-line' },
@@ -139,8 +139,6 @@ export default {
   computed: {
     filteredNavItems() {
       return this.allNavItems.filter(item => {
-        // 首頁橫幅管理：必定顯示於左側選單
-        if (item.to === '/admin/banners') return true;
         // 若為系統管理員或尚未登入，全數顯示
         if (!this.adminAuth?.isLoggedIn || this.adminAuth?.currentRole === 'admin') return true;
         return this.adminAuth.canAccess(item.to);

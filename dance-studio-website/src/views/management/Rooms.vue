@@ -2,9 +2,14 @@
   <div class="rooms">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h2>教室列表</h2>
-      <button @click="openCreate" class="btn btn-success">
-        <i class="bi bi-plus-lg me-1"></i>新增教室
-      </button>
+      <div class="d-flex gap-2">
+        <router-link to="/venue" target="_blank" class="btn btn-outline-primary">
+          <i class="bi bi-box-arrow-up-right me-1"></i>預覽前台場地
+        </router-link>
+        <button @click="openCreate" class="btn btn-success">
+          <i class="bi bi-plus-lg me-1"></i>新增教室
+        </button>
+      </div>
     </div>
 
     <!-- 載入中狀態 -->
