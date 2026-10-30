@@ -7679,7 +7679,7 @@ api.add_resource(PageBannerDetailResource, '/api/page-banners/<string:page_key>'
 
 class LogoSettingsResource(Resource):
     def get(self):
-        """取得導航列 LOGO 與網站名稱設定 (公開 API)"""
+        """取得導航列 LOGO 與網站名稱、開場動畫圖設定 (公開 API)"""
         try:
             connection = get_db_connection()
             if not connection:
@@ -7688,7 +7688,7 @@ class LogoSettingsResource(Resource):
                 cursor = connection.cursor(dictionary=True)
                 cursor.execute("""
                     SELECT setting_key, setting_value FROM system_settings 
-                    WHERE setting_key IN ('navbar_logo_type', 'navbar_logo_text', 'navbar_logo_image')
+                    WHERE setting_key IN ('navbar_logo_type', 'navbar_logo_text', 'navbar_logo_image', 'splash_logo_image')
                 """)
                 rows = cursor.fetchall()
                 settings = {r['setting_key']: r['setting_value'] for r in rows}
@@ -7696,7 +7696,8 @@ class LogoSettingsResource(Resource):
                     'success': True,
                     'logo_type': settings.get('navbar_logo_type', 'text') or 'text',
                     'logo_text': settings.get('navbar_logo_text', 'Dance Studio') or 'Dance Studio',
-                    'logo_image': settings.get('navbar_logo_image', '') or ''
+                    'logo_image': settings.get('navbar_logo_image', '') or '',
+                    'splash_image': settings.get('splash_logo_image', '') or ''
                 }, 200
             finally:
                 cursor.close()
@@ -7706,12 +7707,13 @@ class LogoSettingsResource(Resource):
 
     @jwt_required(['admin', 'desk'])
     def put(self):
-        """更新導航列 LOGO 與網站名稱設定 (需管理員或櫃檯權限)"""
+        """更新導航列 LOGO 與網站名稱、開場動畫圖設定 (需管理員或櫃檯權限)"""
         try:
             data = request.get_json() or {}
             logo_type = 'image' if str(data.get('logo_type')).lower() == 'image' else 'text'
             logo_text = (data.get('logo_text') or '').strip() or 'Dance Studio'
             logo_image = (data.get('logo_image') or '').strip()
+            splash_image = (data.get('splash_image') or '').strip()
 
             connection = get_db_connection()
             if not connection:
@@ -7723,16 +7725,18 @@ class LogoSettingsResource(Resource):
                     VALUES 
                         ('navbar_logo_type', %s, '主導航列LOGO類型 (text:文字名稱, image:圖片LOGO)'),
                         ('navbar_logo_text', %s, '主導航列文字名稱'),
-                        ('navbar_logo_image', %s, '主導航列LOGO圖片網址')
+                        ('navbar_logo_image', %s, '主導航列LOGO圖片網址'),
+                        ('splash_logo_image', %s, '網站開場進場動畫圖片網址')
                     ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
-                """, (logo_type, logo_text, logo_image))
+                """, (logo_type, logo_text, logo_image, splash_image))
                 connection.commit()
                 return {
                     'success': True,
-                    'message': '主導航列 LOGO 設定已更新！',
+                    'message': '主導航列 LOGO 與開場圖設定已更新！',
                     'logo_type': logo_type,
                     'logo_text': logo_text,
-                    'logo_image': logo_image
+                    'logo_image': logo_image,
+                    'splash_image': splash_image
                 }, 200
             finally:
                 cursor.close()
@@ -7741,11 +7745,11 @@ class LogoSettingsResource(Resource):
             return {'error': f'更新 LOGO 設定失敗: {str(e)}'}, 500
 
 class LogoImageUploadResource(BannerImageUploadResource):
-    """主導航列 LOGO 圖片上傳"""
+    """主導航列 LOGO 與開場動畫圖片上傳"""
     pass
 
 api.add_resource(LogoSettingsResource, '/api/site-settings/logo')
-api.add_resource(LogoImageUploadResource, '/api/upload/logo-image')
+api.add_resource(LogoImageUploadResource, '/api/upload/logo-image', '/api/upload/splash-image')
 
 # 確保在 Gunicorn / 生產環境啟動時自動初始化資料庫表格
 try:

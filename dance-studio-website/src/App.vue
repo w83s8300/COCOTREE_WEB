@@ -3,7 +3,11 @@
     <!-- Splash Screen -->
     <Transition name="fade">
       <div v-if="showSplash" class="splash-screen">
-        <img src="/favicon.ico" alt="Dance Studio Logo" class="splash-logo">
+        <img
+          :src="currentSplashImage"
+          alt="Dance Studio Logo"
+          class="splash-logo"
+        />
       </div>
     </Transition>
 
@@ -165,7 +169,8 @@ export default {
       logoSettings: {
         logo_type: 'text',
         logo_text: 'Dance Studio',
-        logo_image: ''
+        logo_image: '',
+        splash_image: ''
       },
       navLinks: [
         { to: '/', label: '首頁' },
@@ -193,6 +198,15 @@ export default {
     },
     currentStudent() {
       return this.auth.state.student
+    },
+    currentSplashImage() {
+      if (this.logoSettings.splash_image) {
+        return this.logoSettings.splash_image
+      }
+      if (this.logoSettings.logo_type === 'image' && this.logoSettings.logo_image) {
+        return this.logoSettings.logo_image
+      }
+      return '/favicon.ico'
     }
   },
   methods: {
@@ -238,7 +252,8 @@ export default {
           this.logoSettings = {
             logo_type: res.logo_type || 'text',
             logo_text: res.logo_text || 'Dance Studio',
-            logo_image: res.logo_image || ''
+            logo_image: res.logo_image || '',
+            splash_image: res.splash_image || ''
           }
         }
       } catch (err) {
@@ -290,8 +305,11 @@ export default {
 }
 
 .splash-logo {
-  width: 150px;
-  height: 150px;
+  max-width: 200px;
+  max-height: 200px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
   animation: pulse 1.5s infinite alternate;
 }
 
