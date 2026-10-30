@@ -1,4 +1,4 @@
-FROM python:3.9-slim-buster
+FROM python:3.11-slim-bookworm
 
 WORKDIR /app
 
@@ -9,8 +9,4 @@ COPY . .
 
 EXPOSE 8001
 
-# 使用模組化版本的應用 (推薦)
-CMD ["python", "app_modular.py"]
-
-# 如要使用原版本，請取消註解下行並註解上行
-# CMD ["python", "app.py"]
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:8001", "app:app"]

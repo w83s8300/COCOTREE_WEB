@@ -2,6 +2,7 @@ import { reactive, computed } from 'vue'
 import api from '@/utils/api'
 
 const STORAGE_KEY = 'student_user'
+const STUDENT_TOKEN_KEY = 'student_token'
 
 function loadSavedStudent() {
   try {
@@ -20,13 +21,17 @@ const state = reactive({
 })
 
 export const useStudentAuth = () => {
-  const setStudent = (studentData) => {
+  const setStudent = (studentData, token = null) => {
     state.student = studentData
     try {
       if (studentData) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(studentData))
+        if (token) {
+          localStorage.setItem(STUDENT_TOKEN_KEY, token)
+        }
       } else {
         localStorage.removeItem(STORAGE_KEY)
+        localStorage.removeItem(STUDENT_TOKEN_KEY)
       }
     } catch (e) {
       console.error('儲存學員資料失敗:', e)
@@ -91,4 +96,3 @@ export const useStudentAuth = () => {
     closeProfileModal
   }
 }
-

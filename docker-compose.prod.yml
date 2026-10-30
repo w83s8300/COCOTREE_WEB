@@ -1,71 +1,87 @@
 version: '3.8'
 
 services:
+  # MySQL 資料庫（生產環境不對外暴露 3306 埠，保障資料安全）
+  db:
+    image: mysql:8.0
+    container_name: dance-studio-db
+    restart: always
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD must be set in .env}
+      MYSQL_DATABASE: ${DB_NAME:-cocotree_db}
+      MYSQL_USER: ${DB_USER:-w83s8300}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/init.sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./mysql/update_teachers_table.sql:/docker-entrypoint-initdb.d/02-update_teachers_table.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${DB_USER:-w83s8300}", "-p${DB_PASSWORD}"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 10s
+    networks:
+      - app-network
+
+  # Python Flask 後端 API（內部通訊，不對外開放 8001 埠；使用 Gunicorn 生產伺服器）
   backend:
     build:
       context: ./backend
-    container_name: cocotree-backend
-    restart: unless-stopped
-    ports:
-      - "8001:8001"
+      dockerfile: Dockerfile
+    container_name: dance-studio-backend
+    restart: always
     environment:
       - DB_HOST=db
       - DB_PORT=3306
-      - DB_USER=w83s8300
-      - DB_PASSWORD=!Q83a8300
-      - DB_NAME=cocotree_db
+      - DB_USER=${DB_USER:-w83s8300}
+      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+      - DB_NAME=${DB_NAME:-cocotree_db}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set in .env}
+      - FLASK_DEBUG=false
     volumes:
-      - ./backend:/app
+      # 持久化保存上傳的圖片（頭像、教室照片、橫幅等）
+      - ./backend/uploads:/app/uploads
     working_dir: /app
-    command: ["python", "app.py"]
+    command: ["gunicorn", "-w", "4", "-b", "0.0.0.0:8001", "app:app"]
     depends_on:
       db:
         condition: service_healthy
     networks:
       - app-network
 
+  # Vue 前端與 Nginx 反向代理（對外開放 80 與 443 埠）
   dance-studio-website:
     build:
       context: ./dance-studio-website
       dockerfile: Dockerfile
-    container_name: dance-studio-website
-    restart: unless-stopped
+    container_name: dance-studio-frontend
+    restart: always
     ports:
-      - "127.0.0.1:3001:80"
+      - "80:80"
+      - "443:443"
+    volumes:
+      # 掛載 Nginx 設定，方便後續啟用 SSL 或調整設定免重構 Image
+      - ./dance-studio-website/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # 掛載 Let's Encrypt 憑證目錄與驗證路徑
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
     depends_on:
       - backend
     networks:
       - app-network
 
-  # MySQL (Database) - 已針對 1GB RAM 主機優化記憶體
-  db:
-    image: mysql:8.0
-    container_name: cocotree-db
-    restart: always
-    command:
-      - --character-set-server=utf8mb4
-      - --collation-server=utf8mb4_unicode_ci
-      - --performance_schema=OFF           # 關閉性能分析，節省約 200MB+ 記憶體
-      - --innodb-buffer-pool-size=128M     # 限制緩衝池大小，適合 1GB 主機
-      - --innodb-log-buffer-size=16M       # 縮小重做日誌快取
-      - --max-connections=50               # 限制最大連線數，防止突發連線耗盡記憶體
-    environment:
-      MYSQL_ROOT_PASSWORD: "!Q83a8300"
-      MYSQL_DATABASE: cocotree_db
-      MYSQL_USER: w83s8300
-      MYSQL_PASSWORD: "!Q83a8300"
-    ports:
-      - "127.0.0.1:3306:3306"              # 僅綁定本機，防止外網直接暴力掃描
+  # Let's Encrypt SSL 憑證自動更新工具
+  certbot:
+    image: certbot/certbot:latest
+    container_name: dance-studio-certbot
+    restart: unless-stopped
     volumes:
-      - mysql_data:/var/lib/mysql
-      - ./mysql/init.sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql
-      - ./mysql/update_teachers_table.sql:/docker-entrypoint-initdb.d/02-update_teachers_table.sql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "w83s8300", "-p!Q83a8300"]
-      interval: 3s
-      timeout: 3s
-      retries: 15
-      start_period: 5s
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    # 每 12 小時自動檢查憑證是否即將過期並更新
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
     networks:
       - app-network
 

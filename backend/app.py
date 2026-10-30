@@ -12,7 +12,16 @@ import urllib.request
 import urllib.parse
 import urllib.error
 
+from auth_utils import (
+    hash_password,
+    verify_and_upgrade_password,
+    generate_token,
+    jwt_required
+)
+
 app = Flask(__name__)
+# 限制檔案上傳最大為 16MB，防範 DoS 攻擊
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 CORS(app)  # 允許跨域請求
 api = Api(app)
 
@@ -440,14 +449,27 @@ def init_database_tables():
             cursor.execute(gallery_albums_table)
             cursor.execute(gallery_photos_table)
 
-            # 插入預設管理員、櫃檯、老師帳號
-            seed_admin_users = """
-            INSERT IGNORE INTO admin_users (id, username, password, name, role, phone, teacher_id) VALUES
-            (1, 'admin', 'admin123', '系統管理員', 'admin', '0911000111', NULL),
-            (2, 'counter', 'desk123', '櫃檯客服', 'desk', '0922000222', NULL),
-            (3, 'teacher', 'teacher123', '張美麗老師', 'teacher', '0933000333', 1)
-            """
-            cursor.execute(seed_admin_users)
+            # 確保 admin_users password 欄位長度至少 255 以支援密碼雜湊
+            try:
+                cursor.execute("ALTER TABLE admin_users MODIFY COLUMN password VARCHAR(255) NOT NULL")
+            except Exception:
+                pass
+
+            # 插入預設管理員、櫃檯、老師帳號（密碼預設經過雜湊加鹽處理）
+            cursor.execute("SELECT COUNT(*) FROM admin_users")
+            admin_cnt = cursor.fetchone()
+            cnt = admin_cnt[0] if isinstance(admin_cnt, tuple) else (admin_cnt.get('COUNT(*)', 0) if isinstance(admin_cnt, dict) else 0)
+            if cnt == 0:
+                admin_hash = hash_password('admin123')
+                desk_hash = hash_password('desk123')
+                teacher_hash = hash_password('teacher123')
+                seed_admin_users = """
+                INSERT IGNORE INTO admin_users (id, username, password, name, role, phone, teacher_id) VALUES
+                (1, 'admin', %s, '系統管理員', 'admin', '0911000111', NULL),
+                (2, 'counter', %s, '櫃檯客服', 'desk', '0922000222', NULL),
+                (3, 'teacher', %s, '張美麗老師', 'teacher', '0933000333', 1)
+                """
+                cursor.execute(seed_admin_users, (admin_hash, desk_hash, teacher_hash))
 
             # 插入預設系統設定
             seed_system_settings = """
@@ -3183,10 +3205,12 @@ class StudentLogin(Resource):
                         connection.commit()
                         
                         student['password_hash'] = p_hash
+                        student_token = generate_token(student['id'], student.get('phone', ''), 'student', extra_claims={'name': student['name']})
                         return {
                             'success': True,
                             'message': '密碼設定成功，歡迎首次登入！',
                             'is_first_login': True,
+                            'token': student_token,
                             'student': format_student_info(student)
                         }, 200
                     else:
@@ -3205,10 +3229,12 @@ class StudentLogin(Resource):
                 if not check_password_hash(student['password_hash'], str(password)):
                     return {'error': '密碼不正確，請重新輸入'}, 401
                 
+                student_token = generate_token(student['id'], student.get('phone', ''), 'student', extra_claims={'name': student['name']})
                 return {
                     'success': True,
                     'message': '登入成功！',
                     'is_first_login': False,
+                    'token': student_token,
                     'student': format_student_info(student)
                 }, 200
             finally:
@@ -3906,8 +3932,9 @@ class LineLinkPhoneResource(Resource):
             return {'error': f'關聯手機處理失敗: {str(e)}'}, 500
 
 class LineAdminSettingsResource(Resource):
+    @jwt_required(['admin'])
     def get(self):
-        """後台管理員取得完整 LINE 設定"""
+        """後台管理員取得完整 LINE 設定（Channel Secret 遮罩防禦）"""
         try:
             connection = get_db_connection()
             if not connection:
@@ -3915,12 +3942,15 @@ class LineAdminSettingsResource(Resource):
             try:
                 cursor = connection.cursor(dictionary=True)
                 s = get_line_system_settings(cursor)
+                raw_secret = s.get('line_channel_secret', '')
+                masked_secret = '••••••••' if raw_secret else ''
                 return {
                     'success': True,
                     'settings': {
                         'line_login_enabled': s['line_login_enabled'] == '1',
                         'line_channel_id': s['line_channel_id'],
-                        'line_channel_secret': s['line_channel_secret'],
+                        'line_channel_secret': masked_secret,
+                        'has_channel_secret': bool(raw_secret),
                         'line_official_id': s['line_official_id'],
                         'line_official_url': s['line_official_url']
                     }
@@ -3931,6 +3961,7 @@ class LineAdminSettingsResource(Resource):
         except Exception as e:
             return {'error': f'查詢 LINE 設定失敗: {str(e)}'}, 500
 
+    @jwt_required(['admin'])
     def post(self):
         """後台管理員更新 LINE 設定"""
         try:
@@ -3949,10 +3980,13 @@ class LineAdminSettingsResource(Resource):
                 items = [
                     ('line_login_enabled', enabled, '是否啟用 LINE 快速登入與帳號關聯 (0=關閉, 1=開啟)'),
                     ('line_channel_id', channel_id, 'LINE Login Channel ID'),
-                    ('line_channel_secret', channel_secret, 'LINE Login Channel Secret'),
                     ('line_official_id', official_id, '工作室 LINE 官方帳號 ID'),
                     ('line_official_url', official_url, '工作室 LINE 官方加好友連結')
                 ]
+                # 只有當輸入了新 Secret 且非遮罩符號時才更新
+                if channel_secret and channel_secret != '••••••••':
+                    items.append(('line_channel_secret', channel_secret, 'LINE Login Channel Secret'))
+
                 for k, v, desc in items:
                     cursor.execute("""
                     INSERT INTO system_settings (setting_key, setting_value, description)
@@ -4007,8 +4041,20 @@ class AdminLogin(Resource):
                 cursor.execute(query, (username,))
                 user = cursor.fetchone()
 
-                if not user or user['password'] != password:
+                if not user:
                     return {'error': '帳號或密碼錯誤，請確認後重試'}, 401
+
+                # 密碼驗證（支援平滑遷移：明文密碼驗證通過後自動雜湊加鹽並更新入庫）
+                if not verify_and_upgrade_password(cursor, 'admin_users', user['id'], user['password'], password):
+                    return {'error': '帳號或密碼錯誤，請確認後重試'}, 401
+
+                connection.commit()
+
+                # 簽發安全 JWT Access Token
+                token = generate_token(user['id'], user['username'], user['role'], extra_claims={
+                    'name': user['name'],
+                    'teacher_id': user.get('teacher_id')
+                })
 
                 user_info = {
                     'id': user['id'],
@@ -4025,6 +4071,7 @@ class AdminLogin(Resource):
                 return {
                     'success': True,
                     'message': f'歡迎回來，{user["name"]}！',
+                    'token': token,
                     'user': user_info
                 }, 200
             finally:
@@ -4036,6 +4083,7 @@ class AdminLogin(Resource):
             return {'error': '登入處理發生錯誤'}, 500
 
 class AdminUsers(Resource):
+    @jwt_required(['admin'])
     def get(self):
         """取得所有後台管理員/員工清單"""
         try:
@@ -4067,6 +4115,7 @@ class AdminUsers(Resource):
         except Exception as e:
             return {'error': f'查詢使用者失敗: {str(e)}'}, 500
 
+    @jwt_required(['admin'])
     def post(self):
         """新增後台管理員/員工"""
         try:
@@ -4097,10 +4146,11 @@ class AdminUsers(Resource):
                 if cursor.fetchone():
                     return {'error': f'帳號「{username}」已存在，請使用其他帳號'}, 400
 
+                hashed_password = hash_password(password)
                 cursor.execute("""
                 INSERT INTO admin_users (username, password, name, role, phone, hourly_rate, bank_account, teacher_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """, (username, password, name, role, phone, hourly_rate, bank_account, teacher_id))
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (username, hashed_password, name, role, phone, hourly_rate, bank_account, teacher_id))
                 connection.commit()
 
                 return {'success': True, 'message': f'成功建立帳號「{username}」！'}, 201
@@ -4111,6 +4161,7 @@ class AdminUsers(Resource):
             return {'error': f'新增使用者失敗: {str(e)}'}, 500
 
 class AdminUser(Resource):
+    @jwt_required(['admin', 'desk', 'teacher'])
     def get(self, user_id):
         """取得單一後台員工帳號"""
         try:
@@ -4141,6 +4192,7 @@ class AdminUser(Resource):
         except Exception as e:
             return {'error': f'查詢使用者失敗: {str(e)}'}, 500
 
+    @jwt_required(['admin', 'desk', 'teacher'])
     def put(self, user_id):
         """編輯後台員工帳號"""
         try:
@@ -4178,12 +4230,13 @@ class AdminUser(Resource):
                     teacher_id = None
 
                 if password:
+                    hashed_pwd = hash_password(password)
                     update_query = """
                     UPDATE admin_users 
                     SET username = %s, password = %s, name = %s, role = %s, phone = %s, hourly_rate = %s, bank_account = %s, teacher_id = %s
                     WHERE id = %s
                     """
-                    cursor.execute(update_query, (username, password, name, role, phone, hourly_rate, bank_account, teacher_id, user_id))
+                    cursor.execute(update_query, (username, hashed_pwd, name, role, phone, hourly_rate, bank_account, teacher_id, user_id))
                 else:
                     update_query = """
                     UPDATE admin_users 
@@ -4200,6 +4253,7 @@ class AdminUser(Resource):
         except Exception as e:
             return {'error': f'更新使用者失敗: {str(e)}'}, 500
 
+    @jwt_required(['admin'])
     def delete(self, user_id):
         """刪除後台員工帳號"""
         if user_id == 1:
@@ -4223,20 +4277,14 @@ class AdminUser(Resource):
 # 打卡 IP 白名單防護與設定
 # ==========================================
 def get_client_ip():
-    """獲取客戶端真實 IP (支援反向代理如 Vite、Nginx 轉發之標頭，並正規化 IPv4-mapped IPv6)"""
-    x_forwarded_for = request.headers.get('X-Forwarded-For')
-    if x_forwarded_for:
-        ip = x_forwarded_for.split(',')[0].strip()
-        if ip:
-            if ip.startswith('::ffff:'):
-                ip = ip[7:]
-            return ip
+    """獲取客戶端真實 IP (優先取反向代理 Nginx 設定之 X-Real-IP 或遠端連線 IP，防範 X-Forwarded-For 偽造)"""
     x_real_ip = request.headers.get('X-Real-IP')
     if x_real_ip:
         ip = x_real_ip.strip()
         if ip.startswith('::ffff:'):
             ip = ip[7:]
         return ip
+    # 若在開發環境或直連，取 remote_addr
     ip = (request.remote_addr or '').strip()
     if ip.startswith('::ffff:'):
         ip = ip[7:]
@@ -4341,6 +4389,7 @@ class AttendanceIpSettings(Resource):
         except Exception as e:
             return {'error': f'取得 IP 設定失敗: {str(e)}'}, 500
 
+    @jwt_required(['admin'])
     def post(self):
         """更新打卡 IP 限制開關與白名單清單"""
         try:
@@ -5468,6 +5517,7 @@ class TeacherAttendanceItem(Resource):
             return {'error': f'刪除打卡記錄失敗: {str(e)}'}, 500
 
 class TeacherAvatarUpload(Resource):
+    @jwt_required(['admin', 'desk', 'teacher'])
     def post(self, teacher_id=None):
         """上傳老師大頭貼圖片"""
         try:
@@ -5567,6 +5617,7 @@ api.add_resource(TeacherAttendanceClockOut, '/api/admin/teacher-attendance/clock
 api.add_resource(TeacherAttendanceList, '/api/admin/teacher-attendance')
 api.add_resource(TeacherAttendanceItem, '/api/admin/teacher-attendance/<int:attendance_id>')
 class RoomImageUpload(Resource):
+    @jwt_required(['admin', 'desk'])
     def post(self, room_id=None):
         """上傳教室/環境照片"""
         try:
@@ -6711,6 +6762,7 @@ api.add_resource(PricingOrderRejectResource, '/api/pricing/orders/<int:order_id>
 # ==========================================
 
 class GalleryImageUpload(Resource):
+    @jwt_required(['admin', 'desk'])
     def post(self):
         """上傳活動花絮圖片 (支援單張或多張上傳，支援檔案或 base64)"""
         try:
@@ -7216,6 +7268,7 @@ api.add_resource(GalleryPhotoDetailResource, '/api/gallery/photos/<int:photo_id>
 api.add_resource(GalleryAlbumCoverResource, '/api/gallery/albums/<int:album_id>/cover')
 
 class BannerImageUploadResource(Resource):
+    @jwt_required(['admin', 'desk'])
     def post(self):
         """上傳首頁橫幅圖片"""
         try:
@@ -7624,4 +7677,5 @@ api.add_resource(PageBannerDetailResource, '/api/page-banners/<string:page_key>'
 if __name__ == '__main__':
     # 初始化資料庫表格
     init_database_tables()
-    app.run(debug=True, host='0.0.0.0', port=8001)
+    flask_debug = os.getenv('FLASK_DEBUG', 'false').lower() in ('true', '1', 't')
+    app.run(debug=flask_debug, host='0.0.0.0', port=8001)

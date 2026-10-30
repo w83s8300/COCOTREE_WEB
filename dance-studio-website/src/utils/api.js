@@ -17,6 +17,28 @@ const api = axios.create({
 })
 
 /**
+ * Request interceptor:
+ * - 自動在請求標頭附加 JWT 授權憑證 (Authorization: Bearer <token>)
+ */
+api.interceptors.request.use(
+  config => {
+    try {
+      const adminToken = localStorage.getItem('admin_token')
+      const studentToken = localStorage.getItem('student_token')
+      const token = adminToken || studentToken
+      if (token) {
+        config.headers = config.headers || {}
+        config.headers['Authorization'] = `Bearer ${token}`
+      }
+    } catch (e) {
+      console.warn('讀取認證憑證失敗:', e)
+    }
+    return config
+  },
+  error => Promise.reject(error)
+)
+
+/**
  * Response interceptor:
  * - Success: auto-unwraps response.data so callers get parsed JSON directly
  * - Error: extracts error message and rejects with a structured error object
@@ -29,12 +51,22 @@ api.interceptors.response.use(
       || error.message
       || '請求失敗'
     const status = error.response?.status
+    const code = error.response?.data?.code
+
+    if (status === 401 && (code === 'TOKEN_EXPIRED' || code === 'INVALID_TOKEN')) {
+      try {
+        localStorage.removeItem('admin_token')
+        localStorage.removeItem('admin_user')
+        localStorage.removeItem('student_token')
+        localStorage.removeItem('student_user')
+      } catch (e) {}
+    }
 
     if (import.meta.env.DEV) {
       console.error(`[API Error] ${status || 'Network'}: ${message}`)
     }
 
-    return Promise.reject({ message, status, raw: error })
+    return Promise.reject({ message, status, code, raw: error })
   }
 )
 

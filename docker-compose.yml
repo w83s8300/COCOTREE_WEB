@@ -9,9 +9,11 @@ services:
     environment:
       - DB_HOST=db
       - DB_PORT=3306
-      - DB_USER=w83s8300
-      - DB_PASSWORD=!Q83a8300
-      - DB_NAME=cocotree_db
+      - DB_USER=${DB_USER:-w83s8300}
+      - DB_PASSWORD=${DB_PASSWORD:-!Q83a8300}
+      - DB_NAME=${DB_NAME:-cocotree_db}
+      - JWT_SECRET=${JWT_SECRET:-dance-studio-dev-secret-key-2026}
+      - FLASK_DEBUG=${FLASK_DEBUG:-true}
     volumes:
       - ./backend:/app
     working_dir: /app
@@ -39,24 +41,24 @@ services:
     networks:
       - app-network
 
-  # MySQL (Database)
+  # MySQL (Database) - 限制僅監聽本機 127.0.0.1，防禦公網 0.0.0.0 暴露
   db:
     image: mysql:8.0
     restart: always
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     environment:
-      MYSQL_ROOT_PASSWORD: "!Q83a8300"
-      MYSQL_DATABASE: cocotree_db
-      MYSQL_USER: w83s8300
-      MYSQL_PASSWORD: "!Q83a8300"
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-!Q83a8300}
+      MYSQL_DATABASE: ${DB_NAME:-cocotree_db}
+      MYSQL_USER: ${DB_USER:-w83s8300}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-!Q83a8300}
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./mysql/init.sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql
       - ./mysql/update_teachers_table.sql:/docker-entrypoint-initdb.d/02-update_teachers_table.sql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "w83s8300", "-p!Q83a8300"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${DB_USER:-w83s8300}", "-p${DB_PASSWORD:-!Q83a8300}"]
       interval: 3s
       timeout: 3s
       retries: 15

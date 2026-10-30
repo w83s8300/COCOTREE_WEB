@@ -554,7 +554,7 @@ export default {
         })
 
         if (res.success && res.student) {
-          this.auth.setStudent(res.student)
+          this.auth.setStudent(res.student, res.token)
           showToast(`歡迎回來，${res.student.name}！`, 'success')
           this.close()
         } else if (res.require_set_password) {
@@ -663,7 +663,7 @@ export default {
         })
 
         if (res.success && res.student) {
-          this.auth.setStudent(res.student)
+          this.auth.setStudent(res.student, res.token)
           showToast(`密碼設定成功！歡迎您，${res.student.name}`, 'success')
           this.close()
         } else {
@@ -728,7 +728,7 @@ export default {
         const res = await api.post('/student/register', payload)
 
         if (res.success && res.student) {
-          this.auth.setStudent(res.student)
+          this.auth.setStudent(res.student, res.token)
           showToast(res.message || `註冊成功！歡迎加入，${res.student.name}`, 'success')
           this.close()
         } else {
