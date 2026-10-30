@@ -169,9 +169,6 @@
     <!-- 5. Recent Events Component (串接後台活動資料) -->
     <RecentEvents :events="events" @show-detail="showEventDetail" data-aos="fade-up" />
 
-    <!-- 6. Video Gallery Component -->
-    <VideoGallery data-aos="fade-up" />
-
     <!-- Modals (Teleport to body to prevent stacking context / backdrop overlay issues) -->
     <teleport to="body">
       <!-- News Detail Modal -->
@@ -249,7 +246,6 @@ import api, { API_ENDPOINTS } from '@/utils/api';
 import NewsList from '@/components/NewsList.vue';
 import FeaturedInstructor from '@/components/FeaturedInstructor.vue';
 import RecentEvents from '@/components/RecentEvents.vue';
-import VideoGallery from '@/components/VideoGallery.vue';
 
 const FALLBACK_BANNERS = [
   {
@@ -343,7 +339,6 @@ export default {
     NewsList,
     FeaturedInstructor,
     RecentEvents,
-    VideoGallery,
   },
   setup() {
     const heroCarousel = ref(null);

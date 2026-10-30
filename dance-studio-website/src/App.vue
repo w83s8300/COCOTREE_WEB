@@ -10,7 +10,19 @@
     <!-- Navbar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top" aria-label="主導航列">
       <div class="container-fluid">
-        <router-link class="navbar-brand" to="/">Dance Studio</router-link>
+        <router-link class="navbar-brand d-flex align-items-center" to="/">
+          <template v-if="logoSettings.logo_type === 'image' && logoSettings.logo_image">
+            <img
+              :src="logoSettings.logo_image"
+              :alt="logoSettings.logo_text || 'Dance Studio Logo'"
+              class="navbar-logo-img"
+              style="max-height: 40px; width: auto; object-fit: contain;"
+            />
+          </template>
+          <template v-else>
+            <span class="fw-bold">{{ logoSettings.logo_text || 'Dance Studio' }}</span>
+          </template>
+        </router-link>
 
         <!-- 管理後台模式：僅顯示返回前台按鈕，不顯示前台漢堡選單與學員登入，避免手機版出現兩個選單按鈕 -->
         <div v-if="isAdminRoute" class="d-flex align-items-center ms-auto">
@@ -113,12 +125,7 @@
           </div>
           <div class="col-md-6 text-center text-md-end">
             <p class="mb-1">地址：402台中市南區工學路169號2樓</p>
-            <p class="mb-2">電話：(02) 1234-5678</p>
-            <div class="small">
-              <router-link to="/admin" class="text-white-50 text-decoration-none">
-                <i class="bi bi-shield-lock me-1"></i>管理後台登入
-              </router-link>
-            </div>
+            <p class="mb-0">電話：(02) 1234-5678</p>
           </div>
         </div>
       </div>
@@ -140,6 +147,7 @@ import StudentLoginModal from './components/StudentLoginModal.vue'
 import StudentProfileModal from './components/StudentProfileModal.vue'
 import { useStudentAuth } from './utils/auth'
 import { showToast } from './utils/toast'
+import api from './utils/api'
 
 export default {
   name: 'App',
@@ -154,6 +162,11 @@ export default {
       showSplash: true,
       auth: useStudentAuth(),
       userDropdownOpen: false,
+      logoSettings: {
+        logo_type: 'text',
+        logo_text: 'Dance Studio',
+        logo_image: ''
+      },
       navLinks: [
         { to: '/', label: '首頁' },
         { to: '/about', label: '關於我們' },
@@ -165,7 +178,6 @@ export default {
         { to: '/venue', label: '場地' },
         { to: '/faq', label: '常見問題' },
         { to: '/contact', label: '聯絡我們' },
-        { to: '/admin', label: '管理後台' },
       ]
     }
   },
@@ -218,9 +230,31 @@ export default {
       if (this.userDropdownOpen && this.$refs.userDropdownWrapper && !this.$refs.userDropdownWrapper.contains(e.target)) {
         this.userDropdownOpen = false
       }
+    },
+    async fetchLogoSettings() {
+      try {
+        const res = await api.get('/site-settings/logo')
+        if (res && (res.success || res.logo_type)) {
+          this.logoSettings = {
+            logo_type: res.logo_type || 'text',
+            logo_text: res.logo_text || 'Dance Studio',
+            logo_image: res.logo_image || ''
+          }
+        }
+      } catch (err) {
+        // 載入失敗使用預設文字
+      }
+    },
+    onLogoSettingsUpdated(e) {
+      if (e?.detail) {
+        this.logoSettings = { ...this.logoSettings, ...e.detail }
+      }
     }
   },
   mounted() {
+    this.fetchLogoSettings()
+    window.addEventListener('logo-settings-updated', this.onLogoSettingsUpdated)
+
     // Shorter splash - dismiss after 1.2s (was 2.5s)
     setTimeout(() => {
       this.showSplash = false
@@ -235,6 +269,7 @@ export default {
   },
   beforeUnmount() {
     document.removeEventListener('click', this.handleClickOutside)
+    window.removeEventListener('logo-settings-updated', this.onLogoSettingsUpdated)
   }
 }
 </script>

@@ -128,7 +128,7 @@ export default {
         { to: '/admin/pricing', label: '課程價目表管理', icon: 'bi bi-tags' },
         { to: '/admin/news', label: '消息與活動管理', icon: 'bi bi-newspaper' },
         { to: '/admin/gallery', label: '活動花絮管理', icon: 'bi bi-images' },
-        { to: '/admin/banners', label: '全站橫幅管理', icon: 'bi bi-card-image', badge: '全站' },
+        { to: '/admin/banners', label: 'LOGO與橫幅管理', icon: 'bi bi-card-image', badge: '全站' },
         { to: '/admin/rooms', label: '教室管理', icon: 'bi bi-door-open' },
         { to: '/admin/styles', label: '舞風管理', icon: 'bi bi-music-note-beamed' },
         { to: '/admin/line-settings', label: 'LINE 整合設定', icon: 'bi bi-line' },

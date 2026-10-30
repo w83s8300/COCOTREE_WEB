@@ -36,6 +36,16 @@
       <li class="nav-item">
         <button
           class="nav-link py-2 px-3 fw-bold"
+          :class="{ active: activeTab === 'logo' }"
+          @click="activeTab = 'logo'"
+        >
+          <i class="bi bi-badge-ad me-1"></i>
+          主導航列 LOGO 設定
+        </button>
+      </li>
+      <li class="nav-item">
+        <button
+          class="nav-link py-2 px-3 fw-bold"
           :class="{ active: activeTab === 'home' }"
           @click="activeTab = 'home'"
         >
@@ -360,6 +370,198 @@
                   @click="openEditPageBannerModal(pb)"
                 >
                   <i class="bi bi-pencil-square"></i>編輯橫幅
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== Tab 3: 主導航列 LOGO 設定 ==================== -->
+    <div v-else-if="activeTab === 'logo'">
+      <div class="row justify-content-center">
+        <div class="col-lg-9 col-xl-8">
+          <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4">
+            <div class="card-header bg-dark text-white p-3 p-md-4">
+              <h5 class="fw-bold mb-1 d-flex align-items-center">
+                <i class="bi bi-badge-ad text-primary me-2"></i>主導航列 (Navbar) LOGO 設定
+              </h5>
+              <p class="text-white-50 small mb-0">
+                自訂前台官網最上方導航列左側的品牌標誌，可自由切換以「文字名稱」或「圖片標誌 (LOGO)」方式呈現。
+              </p>
+            </div>
+            
+            <div class="card-body p-4">
+              <!-- 1. 呈現方式切換 -->
+              <div class="mb-4">
+                <label class="form-label fw-bold text-dark d-block mb-3">
+                  <i class="bi bi-toggles text-primary me-1"></i>LOGO 呈現方式
+                </label>
+                <div class="row g-3">
+                  <div class="col-sm-6">
+                    <div
+                      class="card h-100 p-3 border-2 transition-all"
+                      :class="logoForm.logo_type === 'text' ? 'border-primary bg-primary-subtle' : 'border-light-subtle bg-light'"
+                      @click="logoForm.logo_type = 'text'"
+                      style="cursor: pointer;"
+                    >
+                      <div class="form-check d-flex align-items-center gap-2">
+                        <input
+                          class="form-check-input mt-0 fs-5"
+                          type="radio"
+                          id="logoTypeText"
+                          value="text"
+                          v-model="logoForm.logo_type"
+                        />
+                        <label class="form-check-label fw-bold text-dark" for="logoTypeText" style="cursor: pointer;">
+                          <i class="bi bi-fonts me-1 text-primary"></i>文字名稱 (Text)
+                        </label>
+                      </div>
+                      <p class="text-muted small mt-2 mb-0 ps-4">
+                        以文字形式展示工作室/品牌名稱，字體清晰簡約。
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="col-sm-6">
+                    <div
+                      class="card h-100 p-3 border-2 transition-all"
+                      :class="logoForm.logo_type === 'image' ? 'border-primary bg-primary-subtle' : 'border-light-subtle bg-light'"
+                      @click="logoForm.logo_type = 'image'"
+                      style="cursor: pointer;"
+                    >
+                      <div class="form-check d-flex align-items-center gap-2">
+                        <input
+                          class="form-check-input mt-0 fs-5"
+                          type="radio"
+                          id="logoTypeImage"
+                          value="image"
+                          v-model="logoForm.logo_type"
+                        />
+                        <label class="form-check-label fw-bold text-dark" for="logoTypeImage" style="cursor: pointer;">
+                          <i class="bi bi-image me-1 text-primary"></i>圖片 LOGO (Image)
+                        </label>
+                      </div>
+                      <p class="text-muted small mt-2 mb-0 ps-4">
+                        上傳或指定工作室專屬圖形標誌、商標圖檔。
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 2. 文字名稱設定 (當選文字時顯示) -->
+              <div v-if="logoForm.logo_type === 'text'" class="mb-4">
+                <label for="logoText" class="form-label fw-bold text-dark">
+                  <i class="bi bi-pencil-square text-primary me-1"></i>品牌文字名稱
+                </label>
+                <div class="input-group input-group-lg">
+                  <span class="input-group-text bg-white"><i class="bi bi-type"></i></span>
+                  <input
+                    type="text"
+                    id="logoText"
+                    v-model="logoForm.logo_text"
+                    class="form-control"
+                    placeholder="例如: Dance Studio 或 椰子樹舞蹈工作室"
+                    maxlength="50"
+                  />
+                </div>
+                <div class="form-text mt-1">顯示於前台頂部導航列左側的品牌名稱。</div>
+              </div>
+
+              <!-- 3. 圖片 LOGO 設定 (當選圖片時顯示) -->
+              <div v-if="logoForm.logo_type === 'image'" class="mb-4">
+                <label class="form-label fw-bold text-dark">
+                  <i class="bi bi-card-image text-primary me-1"></i>LOGO 圖片上傳 / 網址
+                </label>
+                
+                <div class="card p-3 border bg-light mb-3">
+                  <div class="d-flex flex-wrap gap-2 mb-3">
+                    <button
+                      type="button"
+                      class="btn btn-outline-primary btn-sm d-flex align-items-center gap-1 shadow-sm"
+                      @click="triggerLogoUpload"
+                      :disabled="isUploadingLogo"
+                    >
+                      <span v-if="isUploadingLogo" class="spinner-border spinner-border-sm"></span>
+                      <i v-else class="bi bi-upload"></i>
+                      <span>{{ isUploadingLogo ? '上傳中...' : '從本機電腦上傳圖片' }}</span>
+                    </button>
+                    <input
+                      type="file"
+                      ref="logoFileInput"
+                      class="d-none"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      @change="handleLogoFileSelect"
+                    />
+                  </div>
+
+                  <div class="input-group">
+                    <span class="input-group-text bg-white">圖片網址</span>
+                    <input
+                      type="text"
+                      v-model="logoForm.logo_image"
+                      class="form-control"
+                      placeholder="https://... 或點擊上方按鈕上傳"
+                    />
+                    <button
+                      v-if="logoForm.logo_image"
+                      class="btn btn-outline-danger"
+                      type="button"
+                      @click="logoForm.logo_image = ''"
+                    >
+                      清除
+                    </button>
+                  </div>
+                  <div class="form-text mt-2 small">
+                    建議使用透明背景的 <strong>PNG</strong>、<strong>SVG</strong> 或 <strong>WebP</strong> 格式，高度建議為 40px~100px。
+                  </div>
+                </div>
+              </div>
+
+              <!-- 4. 即時效果模擬預覽 (導航列深色模擬區) -->
+              <div class="mb-4">
+                <label class="form-label fw-bold text-dark mb-2">
+                  <i class="bi bi-eye text-primary me-1"></i>前台導航列即時預覽效果
+                </label>
+                <div class="bg-dark p-3 rounded-3 d-flex align-items-center justify-content-between border shadow-sm">
+                  <div class="d-flex align-items-center">
+                    <template v-if="logoForm.logo_type === 'image' && logoForm.logo_image">
+                      <img
+                        :src="logoForm.logo_image"
+                        alt="Logo Preview"
+                        style="max-height: 40px; width: auto; object-fit: contain;"
+                        @error="handleLogoPreviewError"
+                      />
+                    </template>
+                    <template v-else>
+                      <span class="text-white fw-bold fs-5 font-monospace">
+                        {{ logoForm.logo_text || 'Dance Studio' }}
+                      </span>
+                    </template>
+                  </div>
+                  <div class="d-none d-md-flex gap-3 text-white-50 small">
+                    <span>首頁</span>
+                    <span>關於我們</span>
+                    <span>師資介紹</span>
+                    <span>課程</span>
+                  </div>
+                </div>
+                <div class="form-text small mt-1">※ 此處模擬在前台導航列深色背景下的實際顯示模樣。</div>
+              </div>
+
+              <!-- 5. 儲存按鈕 -->
+              <div class="d-flex justify-content-end gap-2 pt-3 border-top">
+                <button
+                  type="button"
+                  class="btn btn-primary px-4 py-2 fw-bold d-flex align-items-center gap-2 shadow-sm"
+                  @click="saveLogoSettings"
+                  :disabled="isSavingLogo"
+                >
+                  <span v-if="isSavingLogo" class="spinner-border spinner-border-sm"></span>
+                  <i v-else class="bi bi-check2-circle fs-5"></i>
+                  <span>{{ isSavingLogo ? '儲存中...' : '儲存 LOGO 設定' }}</span>
                 </button>
               </div>
             </div>
@@ -962,7 +1164,14 @@ export default {
   name: 'BannerManagement',
   data() {
     return {
-      activeTab: 'home', // 'home' | 'pages'
+      activeTab: 'logo', // 'logo' | 'home' | 'pages'
+      logoForm: {
+        logo_type: 'text',
+        logo_text: 'Dance Studio',
+        logo_image: ''
+      },
+      isUploadingLogo: false,
+      isSavingLogo: false,
       banners: [],
       pageBanners: [],
       loading: true,
@@ -1035,6 +1244,7 @@ export default {
     }
     this.fetchBanners();
     this.fetchPageBanners();
+    this.fetchLogoSettings();
   },
   beforeUnmount() {
     if (this.bannerModalInstance) this.bannerModalInstance.dispose();
@@ -1042,6 +1252,94 @@ export default {
     if (this.pageBannerModalInstance) this.pageBannerModalInstance.dispose();
   },
   methods: {
+    async fetchLogoSettings() {
+      try {
+        const res = await api.get('/site-settings/logo');
+        if (res && (res.success || res.logo_type)) {
+          this.logoForm = {
+            logo_type: res.logo_type || 'text',
+            logo_text: res.logo_text || 'Dance Studio',
+            logo_image: res.logo_image || ''
+          };
+        }
+      } catch (err) {
+        console.error('取得 LOGO 設定失敗:', err);
+      }
+    },
+
+    triggerLogoUpload() {
+      if (this.$refs.logoFileInput) {
+        this.$refs.logoFileInput.click();
+      }
+    },
+
+    async handleLogoFileSelect(e) {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      if (file.size > 5 * 1024 * 1024) {
+        showToast('圖片檔案大小不得超過 5MB', 'warning');
+        return;
+      }
+
+      this.isUploadingLogo = true;
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const res = await api.post('/upload/logo-image', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        if (res && res.image_url) {
+          this.logoForm.logo_image = res.image_url;
+          this.logoForm.logo_type = 'image';
+          showToast('LOGO 圖片上傳成功！', 'success');
+        }
+      } catch (err) {
+        showToast(err.message || 'LOGO 圖片上傳失敗', 'danger');
+      } finally {
+        this.isUploadingLogo = false;
+        e.target.value = '';
+      }
+    },
+
+    async saveLogoSettings() {
+      if (this.logoForm.logo_type === 'text' && !this.logoForm.logo_text.trim()) {
+        showToast('請輸入品牌文字名稱', 'warning');
+        return;
+      }
+      if (this.logoForm.logo_type === 'image' && !this.logoForm.logo_image.trim()) {
+        showToast('請上傳或輸入 LOGO 圖片網址', 'warning');
+        return;
+      }
+
+      this.isSavingLogo = true;
+      try {
+        const res = await api.put('/site-settings/logo', {
+          logo_type: this.logoForm.logo_type,
+          logo_text: this.logoForm.logo_text.trim(),
+          logo_image: this.logoForm.logo_image.trim()
+        });
+        showToast('主導航列 LOGO 設定已成功儲存！', 'success');
+        // 廣播給 Navbar 即時更新
+        window.dispatchEvent(new CustomEvent('logo-settings-updated', {
+          detail: {
+            logo_type: this.logoForm.logo_type,
+            logo_text: this.logoForm.logo_text.trim(),
+            logo_image: this.logoForm.logo_image.trim()
+          }
+        }));
+      } catch (err) {
+        showToast(err.message || '儲存 LOGO 設定失敗', 'danger');
+      } finally {
+        this.isSavingLogo = false;
+      }
+    },
+
+    handleLogoPreviewError() {
+      showToast('LOGO 圖片載入失敗，請確認圖片網址是否正確', 'warning');
+    },
+
     async fetchBanners() {
       this.loading = true;
       this.error = null;

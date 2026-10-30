@@ -27,3 +27,4 @@ api/composer.lock
 # IDE files
 .idea/
 .vscode/
+SSL

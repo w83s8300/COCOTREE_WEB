@@ -20,7 +20,7 @@ echo "=========================================="
 mkdir -p ./certbot/conf ./certbot/www
 
 # 2. 透過 Certbot 容器驗證網域並下載憑證
-docker compose -f docker-compose.prod.yml run --rm certbot certonly \
+docker compose -f docker-compose.prod.yml run --rm --entrypoint certbot certbot certonly \
   --webroot --webroot-path=/var/www/certbot \
   --email "${EMAIL}" \
   --agree-tos \
@@ -38,4 +38,3 @@ echo "=========================================="
 echo "🎉 SSL 設定成功！您的網站已啟用 HTTPS："
 echo "👉 https://${DOMAIN}"
 echo "=========================================="
-

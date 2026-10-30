@@ -441,3 +441,19 @@ INSERT INTO page_banners (page_key, page_name, title, subtitle, image_url) VALUE
 ('faq', '常見問題', '常見問題 / FAQ', '快速解答學員常見疑問，新手安心踏出第一步', 'https://picsum.photos/1920/500?random=33'),
 ('contact', '聯絡我們', '聯絡我們 / CONTACT', '歡迎預約參觀、諮詢課程或與我們聯繫交流', 'https://picsum.photos/1920/500?random=34')
 ON DUPLICATE KEY UPDATE page_name=VALUES(page_name);
+
+-- 建立最新消息與活動公告表格
+CREATE TABLE IF NOT EXISTS news (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    category VARCHAR(50) DEFAULT 'news',
+    tag VARCHAR(50) DEFAULT '公告',
+    summary TEXT NULL,
+    content TEXT NULL,
+    image_url TEXT NULL,
+    is_published BOOLEAN DEFAULT TRUE,
+    publish_date DATE NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+

@@ -475,7 +475,10 @@ def init_database_tables():
             seed_system_settings = """
             INSERT IGNORE INTO system_settings (setting_key, setting_value, description) VALUES
             ('attendance_ip_restriction_enabled', '0', '打卡IP限制開關(0=關閉, 1=開啟)'),
-            ('attendance_allowed_ips', '', '允許打卡的IP白名單(逗號或換行分隔)')
+            ('attendance_allowed_ips', '', '允許打卡的IP白名單(逗號或換行分隔)'),
+            ('navbar_logo_type', 'text', '主導航列LOGO類型 (text:文字名稱, image:圖片LOGO)'),
+            ('navbar_logo_text', 'Dance Studio', '主導航列文字名稱'),
+            ('navbar_logo_image', '', '主導航列LOGO圖片網址')
             """
             cursor.execute(seed_system_settings)
 
@@ -7673,6 +7676,82 @@ class PageBannerDetailResource(Resource):
 
 api.add_resource(PageBannerListResource, '/api/page-banners')
 api.add_resource(PageBannerDetailResource, '/api/page-banners/<string:page_key>')
+
+class LogoSettingsResource(Resource):
+    def get(self):
+        """取得導航列 LOGO 與網站名稱設定 (公開 API)"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("""
+                    SELECT setting_key, setting_value FROM system_settings 
+                    WHERE setting_key IN ('navbar_logo_type', 'navbar_logo_text', 'navbar_logo_image')
+                """)
+                rows = cursor.fetchall()
+                settings = {r['setting_key']: r['setting_value'] for r in rows}
+                return {
+                    'success': True,
+                    'logo_type': settings.get('navbar_logo_type', 'text') or 'text',
+                    'logo_text': settings.get('navbar_logo_text', 'Dance Studio') or 'Dance Studio',
+                    'logo_image': settings.get('navbar_logo_image', '') or ''
+                }, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'查詢 LOGO 設定失敗: {str(e)}'}, 500
+
+    @jwt_required(['admin', 'desk'])
+    def put(self):
+        """更新導航列 LOGO 與網站名稱設定 (需管理員或櫃檯權限)"""
+        try:
+            data = request.get_json() or {}
+            logo_type = 'image' if str(data.get('logo_type')).lower() == 'image' else 'text'
+            logo_text = (data.get('logo_text') or '').strip() or 'Dance Studio'
+            logo_image = (data.get('logo_image') or '').strip()
+
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(buffered=True)
+                cursor.execute("""
+                    INSERT INTO system_settings (setting_key, setting_value, description)
+                    VALUES 
+                        ('navbar_logo_type', %s, '主導航列LOGO類型 (text:文字名稱, image:圖片LOGO)'),
+                        ('navbar_logo_text', %s, '主導航列文字名稱'),
+                        ('navbar_logo_image', %s, '主導航列LOGO圖片網址')
+                    ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+                """, (logo_type, logo_text, logo_image))
+                connection.commit()
+                return {
+                    'success': True,
+                    'message': '主導航列 LOGO 設定已更新！',
+                    'logo_type': logo_type,
+                    'logo_text': logo_text,
+                    'logo_image': logo_image
+                }, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'更新 LOGO 設定失敗: {str(e)}'}, 500
+
+class LogoImageUploadResource(BannerImageUploadResource):
+    """主導航列 LOGO 圖片上傳"""
+    pass
+
+api.add_resource(LogoSettingsResource, '/api/site-settings/logo')
+api.add_resource(LogoImageUploadResource, '/api/upload/logo-image')
+
+# 確保在 Gunicorn / 生產環境啟動時自動初始化資料庫表格
+try:
+    init_database_tables()
+except Exception as e:
+    print(f"資料庫初始化警示: {e}")
 
 if __name__ == '__main__':
     # 初始化資料庫表格
