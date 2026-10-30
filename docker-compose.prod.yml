@@ -4,8 +4,16 @@ services:
   backend:
     build:
       context: ./backend
+    container_name: cocotree-backend
+    restart: unless-stopped
     ports:
       - "8001:8001"
+    environment:
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_USER=w83s8300
+      - DB_PASSWORD=!Q83a8300
+      - DB_NAME=cocotree_db
     volumes:
       - ./backend:/app
     working_dir: /app
@@ -29,24 +37,31 @@ services:
     networks:
       - app-network
 
-  # MySQL (Database)
+  # MySQL (Database) - 已針對 1GB RAM 主機優化記憶體
   db:
     image: mysql:8.0
+    container_name: cocotree-db
     restart: always
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --performance_schema=OFF --innodb-buffer-pool-size=128M --max-connections=50    
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --performance_schema=OFF           # 關閉性能分析，節省約 200MB+ 記憶體
+      - --innodb-buffer-pool-size=128M     # 限制緩衝池大小，適合 1GB 主機
+      - --innodb-log-buffer-size=16M       # 縮小重做日誌快取
+      - --max-connections=50               # 限制最大連線數，防止突發連線耗盡記憶體
     environment:
-      MYSQL_ROOT_PASSWORD: rootpass
-      MYSQL_DATABASE: testdb
-      MYSQL_USER: user
-      MYSQL_PASSWORD: userpass
+      MYSQL_ROOT_PASSWORD: "!Q83a8300"
+      MYSQL_DATABASE: cocotree_db
+      MYSQL_USER: w83s8300
+      MYSQL_PASSWORD: "!Q83a8300"
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"              # 僅綁定本機，防止外網直接暴力掃描
     volumes:
       - mysql_data:/var/lib/mysql
       - ./mysql/init.sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql
       - ./mysql/update_teachers_table.sql:/docker-entrypoint-initdb.d/02-update_teachers_table.sql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "user", "-puserpass"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "w83s8300", "-p!Q83a8300"]
       interval: 3s
       timeout: 3s
       retries: 15
@@ -60,4 +75,3 @@ networks:
 
 volumes:
   mysql_data:
-

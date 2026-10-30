@@ -6,6 +6,12 @@ services:
       context: ./backend
     ports:
       - "8001:8001"
+    environment:
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_USER=w83s8300
+      - DB_PASSWORD=!Q83a8300
+      - DB_NAME=cocotree_db
     volumes:
       - ./backend:/app
     working_dir: /app
@@ -16,7 +22,6 @@ services:
     networks:
       - app-network
 
-  
   dance-studio-website:
     build:
       context: ./dance-studio-website
@@ -33,16 +38,17 @@ services:
       - API_PROXY_TARGET=http://backend:8001
     networks:
       - app-network
+
   # MySQL (Database)
   db:
     image: mysql:8.0
     restart: always
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     environment:
-      MYSQL_ROOT_PASSWORD: rootpass
-      MYSQL_DATABASE: testdb
-      MYSQL_USER: user
-      MYSQL_PASSWORD: userpass
+      MYSQL_ROOT_PASSWORD: "!Q83a8300"
+      MYSQL_DATABASE: cocotree_db
+      MYSQL_USER: w83s8300
+      MYSQL_PASSWORD: "!Q83a8300"
     ports:
       - "3306:3306"
     volumes:
@@ -50,15 +56,14 @@ services:
       - ./mysql/init.sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql
       - ./mysql/update_teachers_table.sql:/docker-entrypoint-initdb.d/02-update_teachers_table.sql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "user", "-puserpass"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "w83s8300", "-p!Q83a8300"]
       interval: 3s
       timeout: 3s
       retries: 15
       start_period: 5s
     networks:
       - app-network
-  
-      
+
 networks:
   app-network:
     driver: bridge

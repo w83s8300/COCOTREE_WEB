@@ -4,7 +4,7 @@
 SET @column_exists = 0;
 SELECT COUNT(*) INTO @column_exists 
 FROM INFORMATION_SCHEMA.COLUMNS 
-WHERE TABLE_SCHEMA = 'testdb' 
+WHERE TABLE_SCHEMA = DATABASE() 
   AND TABLE_NAME = 'students' 
   AND COLUMN_NAME = 'remaining_classes';
 
@@ -20,9 +20,8 @@ DEALLOCATE PREPARE stmt;
 SET @column_exists = 0;
 SELECT COUNT(*) INTO @column_exists 
 FROM INFORMATION_SCHEMA.COLUMNS 
-WHERE TABLE_SCHEMA = 'testdb' 
-  AND TABLE_NAME = 'students' 
-  AND COLUMN_NAME = 'membership_expiry';
+WHERE TABLE_SCHEMA = DATABASE() 
+  AND TABLE_NAME = 'membership_expiry';
 
 SET @sql = IF(@column_exists = 0, 
     'ALTER TABLE students ADD COLUMN membership_expiry DATE COMMENT ''會員到期日''',

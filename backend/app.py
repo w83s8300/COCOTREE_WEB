@@ -32,13 +32,13 @@ def serve_uploaded_file(filename):
     """提供已上傳靜態圖片檔案"""
     return send_from_directory(UPLOAD_FOLDER, filename)
 
-# 資料庫連接配置
+# 資料庫連接配置（優先讀取環境變數）
 DB_CONFIG = {
-    'host': 'db',  # Docker Compose 中的服務名稱
-    'port': 3306,
-    'user': 'user',
-    'password': 'userpass',
-    'database': 'testdb',
+    'host': os.getenv('DB_HOST', 'db'),
+    'port': int(os.getenv('DB_PORT', 3306)),
+    'user': os.getenv('DB_USER', 'w83s8300'),
+    'password': os.getenv('DB_PASSWORD', '!Q83a8300'),
+    'database': os.getenv('DB_NAME', 'cocotree_db'),
     'charset': 'utf8mb4',
     'buffered': True
 }

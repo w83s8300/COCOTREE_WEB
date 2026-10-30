@@ -1,3 +1,4 @@
+import os
 """
 共用工具模組 - 資料庫連接和配置
 """
@@ -5,12 +6,13 @@ import mysql.connector
 import time
 
 # 資料庫連接配置
+# 資料庫連接配置（優先讀取環境變數）
 DB_CONFIG = {
-    'host': 'db',  # Docker Compose 中的服務名稱
-    'port': 3306,
-    'user': 'user',
-    'password': 'userpass',
-    'database': 'testdb',
+    'host': os.getenv('DB_HOST', 'db'),
+    'port': int(os.getenv('DB_PORT', 3306)),
+    'user': os.getenv('DB_USER', 'w83s8300'),
+    'password': os.getenv('DB_PASSWORD', '!Q83a8300'),
+    'database': os.getenv('DB_NAME', 'cocotree_db'),
     'charset': 'utf8mb4'
 }
 
