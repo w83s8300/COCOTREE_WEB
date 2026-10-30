@@ -130,7 +130,7 @@ export default {
         { to: '/admin/gallery', label: '活動花絮管理', icon: 'bi bi-images' },
         { to: '/admin/banners', label: 'LOGO與橫幅管理', icon: 'bi bi-card-image', badge: '全站' },
         { to: '/admin/rooms', label: '教室管理', icon: 'bi bi-door-open' },
-        { to: '/admin/styles', label: '舞風管理', icon: 'bi bi-music-note-beamed' },
+        { to: '/admin/styles', label: '課程類型', icon: 'bi bi-music-note-beamed' },
         { to: '/admin/line-settings', label: 'LINE 整合設定', icon: 'bi bi-line' },
         { to: '/admin/users', label: '權限帳號管理', icon: 'bi bi-shield-lock' }
       ]

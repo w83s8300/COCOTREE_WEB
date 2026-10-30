@@ -14,7 +14,7 @@
         <input type="text" id="level" class="form-control" v-model="course.level" required>
       </div>
       <div class="form-group">
-        <label for="style_id" class="form-label">風格:</label>
+        <label for="style_id" class="form-label">課程類型:</label>
         <select id="style_id" class="form-select" v-model="course.style_id">
           <option :value="null">無</option>
           <option v-for="style in styles" :key="style.id" :value="style.id">

@@ -33,7 +33,7 @@
           <tr>
             <th scope="col">課程名稱</th>
             <th scope="col">難度</th>
-            <th scope="col">舞風</th>
+            <th scope="col">課程類型</th>
             <th scope="col">時長</th>
             <th scope="col">人數上限</th>
             <th scope="col">扣堂數</th>
