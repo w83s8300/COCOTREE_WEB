@@ -31,7 +31,7 @@ services:
     container_name: dance-studio-website
     restart: unless-stopped
     ports:
-      - "3001:80"
+      - "80:80"
     depends_on:
       - backend
     networks:
