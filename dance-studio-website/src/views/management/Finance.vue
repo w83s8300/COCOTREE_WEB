@@ -23,7 +23,7 @@
         <button
           type="button"
           class="btn btn-success d-flex align-items-center gap-2 px-3 shadow-sm fw-bold"
-          @click="openCreateModal"
+          @click="openCreateModal('income')"
         >
           <i class="bi bi-plus-circle-fill fs-5"></i>
           <span>記一筆收支</span>
@@ -398,7 +398,7 @@
         <i class="bi bi-receipt-cutoff fs-1 text-muted opacity-50 d-block mb-3"></i>
         <h6 class="fw-bold">所選篩選區間內尚無收支記錄</h6>
         <p class="small text-muted mb-3">點擊下方按鈕，立即記錄第一筆工作室收入或營運支出！</p>
-        <button type="button" class="btn btn-success btn-sm rounded-pill px-4 shadow-sm fw-bold" @click="openCreateModal">
+        <button type="button" class="btn btn-success btn-sm rounded-pill px-4 shadow-sm fw-bold" @click="openCreateModal('income')">
           <i class="bi bi-plus-lg me-1"></i>立即記一筆
         </button>
       </div>
@@ -911,19 +911,25 @@ export default {
     switchType(type) {
       this.form.type = type;
       // 自動切換為該類型的第一個常用分類 (若當前分類非該類型)
-      if (!this.presetCategories[type].includes(this.form.category)) {
+      if (this.presetCategories && this.presetCategories[type] && !this.presetCategories[type].includes(this.form.category)) {
         this.form.category = this.presetCategories[type][0];
       }
     },
 
     openCreateModal(defaultType = 'income') {
+      const type = (typeof defaultType === 'string' && (defaultType === 'income' || defaultType === 'expense'))
+        ? defaultType
+        : 'income';
       this.editingId = null;
       const todayStr = this.formatDate(new Date());
       const currentUserName = this.adminAuth.currentUser?.name || '系統管理員';
+      const defaultCategory = (this.presetCategories && this.presetCategories[type] && this.presetCategories[type][0])
+        ? this.presetCategories[type][0]
+        : '學費 / 堂數購買';
 
       this.form = {
-        type: defaultType,
-        category: this.presetCategories[defaultType][0],
+        type: type,
+        category: defaultCategory,
         amount: null,
         record_date: todayStr,
         payment_method: '現金',
@@ -1071,3 +1077,4 @@ export default {
   }
 }
 </style>
+

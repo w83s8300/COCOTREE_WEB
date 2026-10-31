@@ -158,14 +158,23 @@ function getCachedLogoSettings() {
     const saved = localStorage.getItem('site_logo_settings')
     if (saved) {
       const parsed = JSON.parse(saved)
-      if (parsed && typeof parsed === 'object') return parsed
+      if (parsed && typeof parsed === 'object') {
+        // 若快取中殘留舊的 Vue 預設圖標，自動升級為工作室官方圖示
+        if (parsed.splash_image && (parsed.splash_image.includes('banner_1793384404963_5d5df446') || parsed.splash_image.includes('favicon'))) {
+          parsed.splash_image = '/studio-logo.svg'
+        }
+        if (parsed.logo_image && (parsed.logo_image.includes('banner_1793384404963_5d5df446') || parsed.logo_image.includes('favicon'))) {
+          parsed.logo_image = '/studio-logo.svg'
+        }
+        return parsed
+      }
     }
   } catch (e) {}
   return {
     logo_type: 'image',
     logo_text: 'coconuttreedancestudio',
-    logo_image: '/favicon.png',
-    splash_image: '/favicon.png'
+    logo_image: '/studio-logo.svg',
+    splash_image: '/studio-logo.svg'
   }
 }
 
@@ -211,13 +220,13 @@ export default {
       return this.auth.state.student
     },
     currentSplashImage() {
-      if (this.logoSettings.splash_image) {
+      if (this.logoSettings.splash_image && !this.logoSettings.splash_image.includes('banner_1793384404963_5d5df446') && !this.logoSettings.splash_image.includes('favicon')) {
         return this.logoSettings.splash_image
       }
-      if (this.logoSettings.logo_type === 'image' && this.logoSettings.logo_image) {
+      if (this.logoSettings.logo_type === 'image' && this.logoSettings.logo_image && !this.logoSettings.logo_image.includes('banner_1793384404963_5d5df446') && !this.logoSettings.logo_image.includes('favicon')) {
         return this.logoSettings.logo_image
       }
-      return '/favicon.png'
+      return '/studio-logo.svg'
     }
   },
   methods: {
@@ -260,11 +269,20 @@ export default {
       try {
         const res = await api.get('/site-settings/logo')
         if (res && (res.success || res.logo_type)) {
+          let splashImg = res.splash_image || ''
+          let logoImg = res.logo_image || ''
+          if (splashImg.includes('banner_1793384404963_5d5df446') || splashImg.includes('favicon')) {
+            splashImg = '/studio-logo.svg'
+          }
+          if (logoImg.includes('banner_1793384404963_5d5df446') || logoImg.includes('favicon')) {
+            logoImg = '/studio-logo.svg'
+          }
+
           this.logoSettings = {
-            logo_type: res.logo_type || 'text',
+            logo_type: res.logo_type || 'image',
             logo_text: res.logo_text || 'coconuttreedancestudio',
-            logo_image: res.logo_image || '',
-            splash_image: res.splash_image || ''
+            logo_image: logoImg,
+            splash_image: splashImg
           }
           try {
             localStorage.setItem('site_logo_settings', JSON.stringify(this.logoSettings))

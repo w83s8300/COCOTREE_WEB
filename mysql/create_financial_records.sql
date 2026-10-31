@@ -16,3 +16,4 @@ CREATE TABLE IF NOT EXISTS financial_records (
     INDEX idx_type (type),
     INDEX idx_category (category)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+

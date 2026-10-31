@@ -623,7 +623,7 @@
                     style="background-color: #0d0e12; min-height: 160px;"
                   >
                     <img
-                      :src="logoForm.splash_image || (logoForm.logo_type === 'image' && logoForm.logo_image ? logoForm.logo_image : '/favicon.png')"
+                      :src="logoForm.splash_image || (logoForm.logo_type === 'image' && logoForm.logo_image ? logoForm.logo_image : '/studio-logo.svg')"
                       alt="Splash Preview"
                       style="max-width: 130px; max-height: 130px; object-fit: contain; animation: pulse 1.5s infinite alternate;"
                     />
@@ -1341,11 +1341,19 @@ export default {
       try {
         const res = await api.get('/site-settings/logo');
         if (res && (res.success || res.logo_type)) {
+          let splashImg = res.splash_image || '';
+          let logoImg = res.logo_image || '';
+          if (splashImg.includes('banner_1793384404963_5d5df446') || splashImg.includes('favicon')) {
+            splashImg = '/studio-logo.svg';
+          }
+          if (logoImg.includes('banner_1793384404963_5d5df446') || logoImg.includes('favicon')) {
+            logoImg = '/studio-logo.svg';
+          }
           this.logoForm = {
-            logo_type: res.logo_type || 'text',
-            logo_text: res.logo_text || 'Dance Studio',
-            logo_image: res.logo_image || '',
-            splash_image: res.splash_image || ''
+            logo_type: res.logo_type || 'image',
+            logo_text: res.logo_text || '椰子樹舞蹈工作室',
+            logo_image: logoImg,
+            splash_image: splashImg
           };
         }
       } catch (err) {

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="pGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="50%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="gGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fde047"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="#0d1117"/>
+  <!-- Trunk -->
+  <path d="M64,96 C61,78 57,62 65,42 C67,38 66,37 64,37 C61,37 59,42 57,60 C55,77 59,93 60,96 Z" fill="url(#gGrad)"/>
+  <!-- Fronds -->
+  <path d="M64,37 C64,25 61,13 64,5 C67,13 67,25 64,37 Z" fill="url(#pGrad)"/>
+  <path d="M64,37 C54,26 38,18 20,20 C34,25 48,34 64,37 Z" fill="url(#pGrad)"/>
+  <path d="M64,37 C74,26 90,18 108,20 C94,25 80,34 64,37 Z" fill="url(#pGrad)"/>
+  <path d="M64,37 C51,34 32,36 15,48 C30,45 49,44 64,37 Z" fill="url(#pGrad)"/>
+  <path d="M64,37 C77,34 96,36 113,48 C98,45 79,44 64,37 Z" fill="url(#pGrad)"/>
+  <circle cx="61" cy="40" r="3.5" fill="url(#gGrad)"/>
+  <circle cx="67" cy="40" r="3" fill="url(#gGrad)"/>
+  <!-- Base Ground -->
+  <path d="M42,98 C56,96 72,96 86,98" stroke="url(#gGrad)" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+</svg>
