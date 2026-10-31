@@ -449,6 +449,52 @@ def init_database_tables():
             cursor.execute(gallery_albums_table)
             cursor.execute(gallery_photos_table)
 
+            # 財務收支記帳表格
+            financial_records_table = """
+            CREATE TABLE IF NOT EXISTS financial_records (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                type ENUM('income', 'expense') NOT NULL COMMENT '收支類型: income收入, expense支出',
+                category VARCHAR(50) NOT NULL COMMENT '收支分類',
+                amount DECIMAL(12, 2) NOT NULL COMMENT '金額',
+                record_date DATE NOT NULL COMMENT '收支日期',
+                payment_method VARCHAR(50) DEFAULT '現金' COMMENT '支付方式',
+                description VARCHAR(255) NOT NULL COMMENT '摘要/說明',
+                note TEXT NULL COMMENT '詳細備註',
+                handler_name VARCHAR(100) NULL COMMENT '經手人',
+                user_id INT NULL COMMENT '建立人員帳號 id',
+                invoice_number VARCHAR(100) NULL COMMENT '收據/發票編號',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_record_date (record_date),
+                INDEX idx_type (type),
+                INDEX idx_category (category)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            """
+            cursor.execute(financial_records_table)
+
+            # 插入示範收支記錄 (若為空)
+            try:
+                cursor.execute("SELECT COUNT(*) FROM financial_records")
+                fr_cnt = cursor.fetchone()
+                fr_count = fr_cnt[0] if isinstance(fr_cnt, tuple) else (fr_cnt.get('COUNT(*)', 0) if isinstance(fr_cnt, dict) else 0)
+                if fr_count == 0:
+                    today_str = date.today().strftime('%Y-%m-%d')
+                    yesterday_str = (date.today() - timedelta(days=2)).strftime('%Y-%m-%d')
+                    sample_records = [
+                        ('income', '學費 / 堂數購買', 6000.00, today_str, '現金', '學員王小明購買 20 堂常規包套', '現金已入櫃檯保險箱', '系統管理員'),
+                        ('income', '單堂體驗費', 500.00, today_str, 'LINE Pay', '新生李雅婷單堂 K-POP 體驗課', 'LINE Pay 交易序號 #LP99812', '櫃檯客服'),
+                        ('income', '場地租借', 2400.00, yesterday_str, '銀行轉帳', '週六上午 A教室 街舞團體排舞租借 3小時', '已核對帳號末五碼 88321', '系統管理員'),
+                        ('expense', '教室租金 / 管理費', 28000.00, yesterday_str, '銀行轉帳', '工學路教室 本月份店面租金與大樓管理費', '房東合約固定月繳', '系統管理員'),
+                        ('expense', '水電瓦斯網路費', 3850.00, yesterday_str, '信用卡', '本月份電費與中華電信光世代光纖網路', '電子帳單自動扣款', '系統管理員'),
+                        ('expense', '耗材與日常雜支', 820.00, today_str, '現金', '更衣室香氛補充、洗手間擦手紙與75%消毒酒精', '全聯福利中心發票開立', '櫃檯客服')
+                    ]
+                    cursor.executemany("""
+                        INSERT INTO financial_records (type, category, amount, record_date, payment_method, description, note, handler_name)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """, sample_records)
+            except Exception as e:
+                print(f"初始化收支示範資料警示: {e}")
+
             # 確保 admin_users password 欄位長度至少 255 以支援密碼雜湊
             try:
                 cursor.execute("ALTER TABLE admin_users MODIFY COLUMN password VARCHAR(255) NOT NULL")
@@ -7676,6 +7722,386 @@ class PageBannerDetailResource(Resource):
 
 api.add_resource(PageBannerListResource, '/api/page-banners')
 api.add_resource(PageBannerDetailResource, '/api/page-banners/<string:page_key>')
+
+# ==========================================
+# 財務收支記帳管理 API (Financial Accounting)
+# ==========================================
+
+class FinancialRecordListResource(Resource):
+    @jwt_required(['admin', 'desk'])
+    def get(self):
+        """取得收支記帳記錄清單與摘要統計"""
+        try:
+            start_date = request.args.get('start_date')
+            end_date = request.args.get('end_date')
+            rec_type = request.args.get('type')  # 'income', 'expense', or 'all'/None
+            category = request.args.get('category')
+            payment_method = request.args.get('payment_method')
+            search = request.args.get('search', '').strip()
+
+            conditions = ["1=1"]
+            params = []
+
+            if start_date:
+                conditions.append("record_date >= %s")
+                params.append(start_date)
+            if end_date:
+                conditions.append("record_date <= %s")
+                params.append(end_date)
+            if rec_type and rec_type in ('income', 'expense'):
+                conditions.append("type = %s")
+                params.append(rec_type)
+            if category:
+                conditions.append("category = %s")
+                params.append(category)
+            if payment_method:
+                conditions.append("payment_method = %s")
+                params.append(payment_method)
+            if search:
+                conditions.append("(description LIKE %s OR note LIKE %s OR handler_name LIKE %s OR invoice_number LIKE %s)")
+                kw = f"%{search}%"
+                params.extend([kw, kw, kw, kw])
+
+            where_clause = " AND ".join(conditions)
+
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+
+            try:
+                cursor = connection.cursor(dictionary=True)
+                query = f"""
+                    SELECT id, type, category, amount, record_date, payment_method, 
+                           description, note, handler_name, user_id, invoice_number, created_at, updated_at
+                    FROM financial_records
+                    WHERE {where_clause}
+                    ORDER BY record_date DESC, id DESC
+                """
+                cursor.execute(query, tuple(params))
+                rows = cursor.fetchall()
+
+                records = []
+                total_income = 0.0
+                total_expense = 0.0
+                income_count = 0
+                expense_count = 0
+
+                cat_income_map = {}
+                cat_expense_map = {}
+
+                for r in rows:
+                    amt = float(r['amount'] or 0.0)
+                    rtype = r['type']
+                    cat = r['category'] or '其他'
+
+                    if rtype == 'income':
+                        total_income += amt
+                        income_count += 1
+                        cat_income_map[cat] = cat_income_map.get(cat, 0.0) + amt
+                    else:
+                        total_expense += amt
+                        expense_count += 1
+                        cat_expense_map[cat] = cat_expense_map.get(cat, 0.0) + amt
+
+                    records.append({
+                        'id': r['id'],
+                        'type': rtype,
+                        'category': cat,
+                        'amount': amt,
+                        'record_date': str(r['record_date']),
+                        'payment_method': r['payment_method'] or '現金',
+                        'description': r['description'] or '',
+                        'note': r['note'] or '',
+                        'handler_name': r['handler_name'] or '',
+                        'user_id': r['user_id'],
+                        'invoice_number': r['invoice_number'] or '',
+                        'created_at': str(r['created_at']) if r.get('created_at') else None
+                    })
+
+                # 分類佔比整理 (降序排列)
+                income_breakdown = [
+                    {'category': k, 'total': round(v, 2), 'percentage': round(v / total_income * 100, 1) if total_income > 0 else 0}
+                    for k, v in sorted(cat_income_map.items(), key=lambda x: x[1], reverse=True)
+                ]
+                expense_breakdown = [
+                    {'category': k, 'total': round(v, 2), 'percentage': round(v / total_expense * 100, 1) if total_expense > 0 else 0}
+                    for k, v in sorted(cat_expense_map.items(), key=lambda x: x[1], reverse=True)
+                ]
+
+                net_profit = total_income - total_expense
+
+                return {
+                    'success': True,
+                    'records': records,
+                    'total': len(records),
+                    'summary': {
+                        'total_income': round(total_income, 2),
+                        'total_expense': round(total_expense, 2),
+                        'net_profit': round(net_profit, 2),
+                        'income_count': income_count,
+                        'expense_count': expense_count
+                    },
+                    'categories_breakdown': {
+                        'income': income_breakdown,
+                        'expense': expense_breakdown
+                    }
+                }, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'查詢收支記錄失敗: {str(e)}'}, 500
+
+    @jwt_required(['admin', 'desk'])
+    def post(self):
+        """新增收支記帳記錄"""
+        try:
+            data = request.get_json() or {}
+            rec_type = data.get('type')
+            category = (data.get('category') or '').strip()
+            amount = data.get('amount')
+            record_date = (data.get('record_date') or '').strip()
+            payment_method = (data.get('payment_method') or '現金').strip()
+            description = (data.get('description') or '').strip()
+            note = (data.get('note') or '').strip()
+            invoice_number = (data.get('invoice_number') or '').strip()
+            handler_name = (data.get('handler_name') or '').strip()
+
+            if rec_type not in ('income', 'expense'):
+                return {'error': '收支類型必須為 收入(income) 或 支出(expense)'}, 400
+            if not category:
+                return {'error': '請選擇或輸入收支分類'}, 400
+            if not description:
+                return {'error': '請填寫摘要說明'}, 400
+
+            try:
+                amount = float(amount)
+                if amount <= 0:
+                    return {'error': '金額必須大於 0'}, 400
+            except (ValueError, TypeError):
+                return {'error': '請輸入正確的金額數字'}, 400
+
+            if not record_date:
+                record_date = date.today().strftime('%Y-%m-%d')
+
+            # 若未填寫經手人，自動帶入當前登入者名稱
+            current_user = getattr(request, 'current_user', {}) or {}
+            if not handler_name:
+                handler_name = current_user.get('name') or current_user.get('username') or '系統人員'
+
+            user_id = current_user.get('user_id')
+
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+
+            try:
+                cursor = connection.cursor(buffered=True)
+                cursor.execute("""
+                    INSERT INTO financial_records 
+                    (type, category, amount, record_date, payment_method, description, note, handler_name, user_id, invoice_number)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (rec_type, category, amount, record_date, payment_method, description, note, handler_name, user_id, invoice_number))
+                connection.commit()
+                new_id = cursor.lastrowid
+                return {
+                    'success': True,
+                    'message': '收支記錄已成功建立！',
+                    'id': new_id
+                }, 201
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'新增收支記錄失敗: {str(e)}'}, 500
+
+
+class FinancialRecordDetailResource(Resource):
+    @jwt_required(['admin', 'desk'])
+    def get(self, record_id):
+        """取得單筆收支記錄詳細資訊"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("SELECT * FROM financial_records WHERE id = %s", (record_id,))
+                r = cursor.fetchone()
+                if not r:
+                    return {'error': '找不到此收支記錄'}, 404
+                record = {
+                    'id': r['id'],
+                    'type': r['type'],
+                    'category': r['category'],
+                    'amount': float(r['amount'] or 0.0),
+                    'record_date': str(r['record_date']),
+                    'payment_method': r['payment_method'],
+                    'description': r['description'],
+                    'note': r['note'] or '',
+                    'handler_name': r['handler_name'] or '',
+                    'user_id': r['user_id'],
+                    'invoice_number': r['invoice_number'] or '',
+                    'created_at': str(r['created_at']) if r.get('created_at') else None
+                }
+                return {'success': True, 'record': record}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'查詢收支記錄失敗: {str(e)}'}, 500
+
+    @jwt_required(['admin', 'desk'])
+    def put(self, record_id):
+        """修改收支記錄"""
+        try:
+            data = request.get_json() or {}
+            rec_type = data.get('type')
+            category = (data.get('category') or '').strip()
+            amount = data.get('amount')
+            record_date = (data.get('record_date') or '').strip()
+            payment_method = (data.get('payment_method') or '現金').strip()
+            description = (data.get('description') or '').strip()
+            note = (data.get('note') or '').strip()
+            invoice_number = (data.get('invoice_number') or '').strip()
+            handler_name = (data.get('handler_name') or '').strip()
+
+            if rec_type not in ('income', 'expense'):
+                return {'error': '收支類型必須為 收入(income) 或 支出(expense)'}, 400
+            if not category:
+                return {'error': '請選擇或輸入收支分類'}, 400
+            if not description:
+                return {'error': '請填寫摘要說明'}, 400
+
+            try:
+                amount = float(amount)
+                if amount <= 0:
+                    return {'error': '金額必須大於 0'}, 400
+            except (ValueError, TypeError):
+                return {'error': '請輸入正確的金額數字'}, 400
+
+            if not record_date:
+                record_date = date.today().strftime('%Y-%m-%d')
+
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+
+            try:
+                cursor = connection.cursor(buffered=True)
+                cursor.execute("""
+                    UPDATE financial_records 
+                    SET type = %s, category = %s, amount = %s, record_date = %s, 
+                        payment_method = %s, description = %s, note = %s, 
+                        handler_name = %s, invoice_number = %s
+                    WHERE id = %s
+                """, (rec_type, category, amount, record_date, payment_method, description, note, handler_name, invoice_number, record_id))
+                connection.commit()
+                if cursor.rowcount == 0:
+                    return {'error': '找不到要更新的記錄或資料未變更'}, 404
+                return {'success': True, 'message': '收支記錄已成功更新！'}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'更新收支記錄失敗: {str(e)}'}, 500
+
+    @jwt_required(['admin', 'desk'])
+    def delete(self, record_id):
+        """刪除單筆收支記錄"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+            try:
+                cursor = connection.cursor(buffered=True)
+                cursor.execute("DELETE FROM financial_records WHERE id = %s", (record_id,))
+                connection.commit()
+                if cursor.rowcount == 0:
+                    return {'error': '找不到要刪除的記錄'}, 404
+                return {'success': True, 'message': '收支記錄已成功刪除！'}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'刪除收支記錄失敗: {str(e)}'}, 500
+
+
+class FinancialSummaryResource(Resource):
+    @jwt_required(['admin', 'desk'])
+    def get(self):
+        """取得跨週期收支總覽數據 (今日、本月、上月、今年、累計)"""
+        try:
+            connection = get_db_connection()
+            if not connection:
+                return {'error': '資料庫連接失敗'}, 500
+
+            today = date.today()
+            today_str = today.strftime('%Y-%m-%d')
+            first_of_this_month = today.replace(day=1).strftime('%Y-%m-%d')
+            
+            # 上個月第一天與最後一天
+            first_of_last_month = (today.replace(day=1) - timedelta(days=1)).replace(day=1).strftime('%Y-%m-%d')
+            last_of_last_month = (today.replace(day=1) - timedelta(days=1)).strftime('%Y-%m-%d')
+
+            first_of_this_year = today.replace(month=1, day=1).strftime('%Y-%m-%d')
+
+            try:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("""
+                    SELECT type, amount, record_date 
+                    FROM financial_records
+                """)
+                rows = cursor.fetchall()
+
+                stats = {
+                    'today': {'income': 0.0, 'expense': 0.0, 'net': 0.0},
+                    'this_month': {'income': 0.0, 'expense': 0.0, 'net': 0.0},
+                    'last_month': {'income': 0.0, 'expense': 0.0, 'net': 0.0},
+                    'this_year': {'income': 0.0, 'expense': 0.0, 'net': 0.0},
+                    'all_time': {'income': 0.0, 'expense': 0.0, 'net': 0.0}
+                }
+
+                for r in rows:
+                    amt = float(r['amount'] or 0.0)
+                    rtype = r['type']
+                    rdate = str(r['record_date'])
+
+                    # 累計
+                    stats['all_time'][rtype] += amt
+
+                    # 今日
+                    if rdate == today_str:
+                        stats['today'][rtype] += amt
+
+                    # 本月
+                    if rdate >= first_of_this_month and rdate <= today_str:
+                        stats['this_month'][rtype] += amt
+
+                    # 上月
+                    if rdate >= first_of_last_month and rdate <= last_of_last_month:
+                        stats['last_month'][rtype] += amt
+
+                    # 今年
+                    if rdate >= first_of_this_year:
+                        stats['this_year'][rtype] += amt
+
+                # 計算淨額
+                for period in stats:
+                    stats[period]['income'] = round(stats[period]['income'], 2)
+                    stats[period]['expense'] = round(stats[period]['expense'], 2)
+                    stats[period]['net'] = round(stats[period]['income'] - stats[period]['expense'], 2)
+
+                return {'success': True, 'summary': stats}, 200
+            finally:
+                cursor.close()
+                connection.close()
+        except Exception as e:
+            return {'error': f'查詢收支彙整失敗: {str(e)}'}, 500
+
+api.add_resource(FinancialRecordListResource, '/api/finance/records')
+api.add_resource(FinancialRecordDetailResource, '/api/finance/records/<int:record_id>')
+api.add_resource(FinancialSummaryResource, '/api/finance/summary')
 
 class LogoSettingsResource(Resource):
     def get(self):

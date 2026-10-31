@@ -86,7 +86,8 @@ export const API_ENDPOINTS = {
   PRICING: '/pricing',
   PRICING_BANK_ACCOUNT: '/pricing/bank-account',
   PRICING_ORDERS: '/pricing/orders',
-  BANNERS: '/banners'
+  BANNERS: '/banners',
+  FINANCE_RECORDS: '/finance/records'
 }
 
 /**

@@ -22,6 +22,7 @@ const state = reactive({
 // 定義各權限可進入的路由
 const ROLE_PERMISSIONS = {
   admin: [
+    '/admin/finance',
     '/admin/banners',
     '/admin/attendance',
     '/admin/teacher-attendance',
@@ -38,6 +39,7 @@ const ROLE_PERMISSIONS = {
     '/admin/line-settings'
   ],
   desk: [
+    '/admin/finance',
     '/admin/banners',
     '/admin/attendance',
     '/admin/schedules',

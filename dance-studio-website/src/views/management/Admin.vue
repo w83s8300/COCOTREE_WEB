@@ -119,6 +119,7 @@ export default {
       adminAuth: useAdminAuth(),
       isSidebarOpen: false,
       allNavItems: [
+        { to: '/admin/finance', label: '收支記帳管理', icon: 'bi bi-cash-coin', badge: '財務' },
         { to: '/admin/schedules', label: '課程時間表', icon: 'bi bi-calendar3' },
         { to: '/admin/teacher-attendance', label: '老師授課打卡', icon: 'bi bi-person-video3' },
         { to: '/admin/attendance', label: '上下班打卡 (櫃檯)', icon: 'bi bi-clock-history' },

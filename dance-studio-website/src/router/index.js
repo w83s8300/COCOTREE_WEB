@@ -88,6 +88,12 @@ const routes = [
         }
       },
       {
+        path: 'finance',
+        name: 'Finance',
+        component: () => import('../views/management/Finance.vue'),
+        meta: { title: '收支記帳管理 - Dance Studio' }
+      },
+      {
         path: 'students',
         name: 'Students',
         component: () => import('../views/management/Students.vue'),
